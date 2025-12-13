@@ -559,6 +559,7 @@ class Humlet:
             "water": 0.0,
             "fertility": 0.5,
             "humidity": 0.5,
+            "roughness": 0.0,
         }
 
         if not hasattr(env, "get_region_at"):
@@ -572,11 +573,13 @@ class Humlet:
         water = 1.0 if getattr(region, "water", False) else 0.0
         fertility = float(getattr(region, "fertility", 0.5))
         humidity = float(getattr(region, "humidity", 0.5))
+        roughness = float(getattr(region, "roughness", 0.0))
 
         info["biome"] = biome
         info["water"] = max(0.0, min(1.0, water))
         info["fertility"] = max(0.0, min(1.0, fertility))
         info["humidity"] = max(0.0, min(1.0, humidity))
+        info["roughness"] = max(0.0, min(1.0, roughness))
 
         return info
 
@@ -613,6 +616,9 @@ class Humlet:
             if env.temperature < 10 or env.temperature > 35 or env.air_quality < 0.8:
                 unsafe_env = 0.4
             local_safety = max(0.0, 1.0 - unsafe_env)
+
+        if self._near_shelter(env):
+            local_safety = min(1.0, local_safety + 0.2)
 
         health_factor = self.health / self.max_health
 
@@ -723,6 +729,17 @@ class Humlet:
             (nearest_friend_dx, nearest_friend_dy),
             (nearest_shelter_dx, nearest_shelter_dy),
         )
+
+    def _near_shelter(self, env: Environment, radius: float = 16.0) -> bool:
+        """Check if the Humlet is within `radius` of a shelter."""
+
+        radius2 = radius * radius
+        for obj in env.objects:
+            if isinstance(obj, Shelter):
+                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+                if dx * dx + dy * dy <= radius2:
+                    return True
+        return False
 
     # ------------------------------------------------------------------ #
     # Higher-level motivations (esteem + curiosity)
@@ -968,9 +985,19 @@ class Humlet:
         if self._life_stage() != "adult":
             return
 
-        # Chance to reproduce increases with surplus energy
+        # Local environment gates reproduction: harsh climates or barren land slow it down
+        local_env = self._sample_local_env(env)
+        local_temp = env.get_local_temperature(self.x, self.y) if hasattr(env, "get_local_temperature") else env.temperature
+
+        fertility_factor = 0.5 + 0.8 * local_env.get("fertility", 0.5)
+        humidity_penalty = 0.2 if local_env.get("humidity", 0.5) < 0.25 else 0.0
+        temp_penalty = max(0.0, abs(local_temp - 22.0) / 20.0)
+
+        # Chance to reproduce increases with surplus energy, but is damped by climate
         surplus = (self.energy - self.repro_min_energy) / (self.max_energy - self.repro_min_energy + 1e-6)
         surplus = max(0.0, min(1.0, surplus))
+        surplus *= fertility_factor
+        surplus *= max(0.0, 1.0 - (temp_penalty + humidity_penalty))
         if random.random() > surplus:
             return
 
@@ -1090,6 +1117,10 @@ class Humlet:
 
         # movement
         speed = 0.75 * self.speed_trait * self.movement_scalar
+        local_env = self._sample_local_env(env)
+        speed *= 1.0 - 0.35 * local_env.get("roughness", 0.0)
+        if local_env.get("water", 0.0) > 0.5:
+            speed *= 0.85
         if self.pregnant:
             preg_progress = 1.0 - (self.gestation_timer / max(1, self.gestation_period))
             speed *= max(0.45, 0.9 - 0.3 * preg_progress)
@@ -1250,6 +1281,8 @@ class Humlet:
         else:
             local_temp = getattr(env, "temperature", 20.0)
 
+        sheltered = self._near_shelter(env)
+
         if local_temp < self.comfort_temp_min:
             temp_delta = self.comfort_temp_min - local_temp
             thermo_cost = 0.008 * mass_ratio * temp_delta
@@ -1258,6 +1291,20 @@ class Humlet:
             thermo_cost = 0.006 * mass_ratio * temp_delta
         else:
             thermo_cost = 0.0
+
+        if sheltered:
+            thermo_cost *= 0.5
+
+        # ---------------- Local biome effects (for energy budgeting) ----------------
+        local = self._sample_local_env(env)
+        biome = local["biome"]
+        fertility = local["fertility"]
+        humidity = local["humidity"]
+        water_level = local["water"]
+        roughness = local.get("roughness", 0.0)
+
+        # Rough terrain makes moving more expensive
+        locomotion_cost *= 1.0 + 0.7 * roughness
 
         self.energy -= (basal_burn + locomotion_cost + thermo_cost)
 
@@ -1269,13 +1316,6 @@ class Humlet:
         # ---------------- Harsh global env damage ----------------
         if env.temperature < 5 or env.temperature > 40 or env.air_quality < 0.75:
             self.health -= 0.02
-
-        # ---------------- Local biome effects ----------------
-        local = self._sample_local_env(env)
-        biome = local["biome"]
-        fertility = local["fertility"]
-        humidity = local["humidity"]
-        water_level = local["water"]
 
         # Desert: extra dehydration / energy burn, small health hit
         if biome == "desert":
@@ -1294,6 +1334,20 @@ class Humlet:
             self.energy -= 0.005
             if self.safety_need < 0.5:
                 self.health += 0.005
+
+        # Heat or cold stress: harsher health penalties if far outside comfort
+        hot_excess = max(0.0, local_temp - self.comfort_temp_max - 2.0)
+        cold_excess = max(0.0, self.comfort_temp_min - local_temp - 2.0)
+        if hot_excess > 0.0:
+            heat_hit = 0.004 * (1.0 + 0.5 * humidity) * hot_excess
+            if sheltered:
+                heat_hit *= 0.4
+            self.health -= heat_hit
+        elif cold_excess > 0.0:
+            cold_hit = 0.003 * (1.0 + roughness) * cold_excess
+            if sheltered:
+                cold_hit *= 0.4
+            self.health -= cold_hit
 
         # ---------------- Social energy adjustments ----------------
         if self.sociability > 0.05:

@@ -123,6 +123,8 @@ class Environment:
         self.food_energy_pool = 0.0
         self.food_capacity = 0
         self._productivity_per_tick = 0.0
+        self._base_productivity_per_tick = 0.0
+        self.avg_humidity = 0.5
 
         # ---------------------------------------------------------- #
         # Biome grid setup (Earth-like latitude + noise)
@@ -347,18 +349,21 @@ class Environment:
             # Fallback: keep a modest default
             self.food_capacity = 200
             self._productivity_per_tick = self.base_food_nutrition * 0.1
+            self._base_productivity_per_tick = self._productivity_per_tick
             self.food_energy_pool = self.food_capacity * self.base_food_nutrition * 0.25
             return
 
         land_tiles = [reg for row in self.regions for reg in row if not reg.water]
         total_fertility = sum(reg.fertility for reg in land_tiles)
         avg_fertility = total_fertility / max(1, len(land_tiles))
+        self.avg_humidity = sum(reg.humidity for reg in land_tiles) / max(1, len(land_tiles))
 
         # Capacity grows with fertile land area; keep within reasonable bounds
         self.food_capacity = max(80, int(total_fertility * 2.5))
 
         # Productivity scales with average fertility; tuned to roughly match previous pacing
         self._productivity_per_tick = self.base_food_nutrition * (0.12 * avg_fertility + 0.05)
+        self._base_productivity_per_tick = self._productivity_per_tick
 
         # Start with some biomass reserve but not a full map of food
         self.food_energy_pool = self.food_capacity * self.base_food_nutrition * 0.3
@@ -420,16 +425,24 @@ class Environment:
     def add_object(self, obj: WorldObject) -> None:
         self.objects.append(obj)
 
-    def _spawn_random_food(self, count: int = 8) -> None:
-        """Spawn food in clustered, biome-aware patches."""
+    def _spawn_random_food(self, count: int = 8) -> float:
+        """Spawn food in clustered, biome-aware patches.
+
+        Returns the total nutrition added so the biomass pool can be debited
+        accurately when nutrition varies by biome.
+        """
+
+        energy_used = 0.0
 
         if not self.regions:
             # fallback: uniform scatter
             for _ in range(count):
                 x = random.uniform(0, self.width)
                 y = random.uniform(0, self.height)
-                self.add_object(Food(x, y))
-            return
+                food = Food(x, y, nutrition=self.base_food_nutrition)
+                self.add_object(food)
+                energy_used += food.nutrition
+            return energy_used
 
         def near_water(reg: Region) -> bool:
             for dr in (-1, 0, 1):
@@ -463,8 +476,10 @@ class Environment:
             for _ in range(count):
                 x = random.uniform(0, self.width)
                 y = random.uniform(0, self.height)
-                self.add_object(Food(x, y))
-            return
+                food = Food(x, y, nutrition=self.base_food_nutrition)
+                self.add_object(food)
+                energy_used += food.nutrition
+            return energy_used
 
         remaining = count
         while remaining > 0:
@@ -482,8 +497,16 @@ class Environment:
                 x = max(0.0, min(self.width - 1.0, cx + dx))
                 y = max(0.0, min(self.height - 1.0, cy + dy))
 
-                self.add_object(Food(x, y))
+                fertility = max(0.0, min(1.0, centre.fertility))
+                humidity = max(0.0, min(1.0, centre.humidity))
+                nutrition = self.base_food_nutrition * (0.6 + 0.8 * fertility + 0.2 * humidity)
+
+                food = Food(x, y, nutrition=nutrition)
+                self.add_object(food)
+                energy_used += nutrition
                 remaining -= 1
+
+        return energy_used
 
     # ------------------------------------------------------------------ #
     # Environment update
@@ -508,6 +531,13 @@ class Environment:
             min(1.0, self.air_quality + random.uniform(-0.005, 0.005)),
         )
 
+        # Climate-dependent productivity: hotter/cooler seasons and humidity
+        # make plants grow faster or slower.
+        temp_penalty = max(0.0, abs(self.temperature - 20.0) / 15.0)
+        temp_factor = max(0.5, 1.1 - temp_penalty)
+        humidity_factor = 0.6 + 0.8 * self.avg_humidity
+        self._productivity_per_tick = self._base_productivity_per_tick * temp_factor * humidity_factor
+
         # Biomass accumulation (sunlight/rain -> plants)
         capacity_energy = self.food_capacity * self.base_food_nutrition
         self.food_energy_pool = min(
@@ -526,7 +556,7 @@ class Environment:
                 spawn_count = min(max_from_pool, logistic_limit)
 
                 if spawn_count > 0:
-                    self._spawn_random_food(count=spawn_count)
-                    self.food_energy_pool -= spawn_count * self.base_food_nutrition
+                    used = self._spawn_random_food(count=spawn_count)
+                    self.food_energy_pool = max(0.0, self.food_energy_pool - used)
 
             self._last_food_spawn = self.time
