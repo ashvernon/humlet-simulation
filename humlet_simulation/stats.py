@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .humlet import Humlet
-from .environment import Environment
+from .environment import Environment, Food
 import math
 
 
@@ -64,6 +64,15 @@ class StatsSnapshot:
     avg_wood_per_capita: float
     avg_stone_per_capita: float
 
+    # Environment / ecology outputs
+    wild_food_count: int
+    food_capacity: int
+    food_energy_pool: float
+    productivity_per_tick: float
+    light_level: float
+    day_progress: float
+    season_progress: float
+
 
 # ----------------------------------------------------------------------
 # Global evolution stats over time
@@ -90,12 +99,28 @@ class EvolutionStats:
 
         # Default village stats if env not passed
         v_food = v_wood = v_stone = 0.0
+        food_capacity = 0
+        food_energy_pool = 0.0
+        productivity_per_tick = 0.0
+        light_level = 0.0
+        day_progress = 0.0
+        season_progress = 0.0
+        wild_food_count = 0
 
         if env is not None and hasattr(env, "village"):
             totals = env.village.totals()
             v_food = totals.get("food", 0.0)
             v_wood = totals.get("wood", 0.0)
             v_stone = totals.get("stone", 0.0)
+            food_capacity = getattr(env, "food_capacity", 0)
+            food_energy_pool = getattr(env, "food_energy_pool", 0.0)
+            productivity_per_tick = getattr(env, "_productivity_per_tick", 0.0)
+            light_level = getattr(env, "light_level", 0.0)
+            day_length = getattr(env, "day_length", 1) or 1
+            season_length = getattr(env, "season_length", 1) or 1
+            day_progress = (getattr(env, "time", 0) % day_length) / day_length
+            season_progress = (getattr(env, "time", 0) % season_length) / season_length
+            wild_food_count = sum(1 for o in env.objects if isinstance(o, Food))
 
         if n == 0:
             snapshot = StatsSnapshot(
@@ -138,6 +163,14 @@ class EvolutionStats:
                 avg_food_per_capita=0.0,
                 avg_wood_per_capita=0.0,
                 avg_stone_per_capita=0.0,
+                # ecology
+                wild_food_count=wild_food_count,
+                food_capacity=food_capacity,
+                food_energy_pool=food_energy_pool,
+                productivity_per_tick=productivity_per_tick,
+                light_level=light_level,
+                day_progress=day_progress,
+                season_progress=season_progress,
             )
         else:
             def avg(fn): return sum(fn(h) for h in alive) / n
@@ -245,6 +278,14 @@ class EvolutionStats:
                 avg_food_per_capita=avg_food_per_capita,
                 avg_wood_per_capita=avg_wood_per_capita,
                 avg_stone_per_capita=avg_stone_per_capita,
+                # ecology
+                wild_food_count=wild_food_count,
+                food_capacity=food_capacity,
+                food_energy_pool=food_energy_pool,
+                productivity_per_tick=productivity_per_tick,
+                light_level=light_level,
+                day_progress=day_progress,
+                season_progress=season_progress,
             )
 
         self.latest = snapshot
