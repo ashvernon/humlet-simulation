@@ -197,6 +197,8 @@ class Humlet:
         # Current physical state (will grow over time)
         self.mass = self.base_mass * 0.4       # start ~child size
         self.height = self.base_height * 0.4
+        self.effective_sense_range = float(self.sense_range)
+        self.movement_scalar = 1.0
 
         # --- Brain activation snapshots for visualization ---
         self.last_inputs = np.zeros(self.N_INPUTS, dtype=float)
@@ -315,6 +317,26 @@ class Humlet:
         # Clamp current state to new maxima
         self.energy = min(self.energy, self.max_energy)
         self.health = min(self.health, self.max_health)
+
+        # Derived functional modifiers linking physique to behaviour
+        avg_mass = 70.0
+        avg_height = 1.7
+        mass_ratio = max(0.2, self.mass / avg_mass)
+        height_ratio = max(0.2, self.height / avg_height)
+
+        # Taller frames get a stride boost; heavier bodies pay an inertia tax
+        stride_boost = 0.85 + 0.25 * math.sqrt(height_ratio)
+        inertia_penalty = 1.0 / (1.0 + 0.35 * max(0.0, mass_ratio - 1.0))
+        self.movement_scalar = max(0.35, min(1.4, stride_boost * inertia_penalty))
+
+        # Eye level influences awareness; update sensors to match growth
+        self.effective_sense_range = self.sense_range * (0.8 + 0.3 * height_ratio)
+        if hasattr(self, "smell"):
+            self.smell.range = self.effective_sense_range
+
+        # Larger bodies need more reserves before reproducing
+        size_factor = (self.mass / self.base_mass) ** 0.1
+        self.repro_min_energy = 55.0 * size_factor
 
 
     # ------------------------------------------------------------------ #
@@ -562,7 +584,7 @@ class Humlet:
                 continue
             dx, dy = self._wrapped_delta(env, other.x, other.y)
             d2 = dx * dx + dy * dy
-            if d2 < (self.sense_range ** 2):
+            if d2 < (self.effective_sense_range ** 2):
                 neighbors += 1
 
         self.neighbor_count = neighbors
@@ -579,10 +601,10 @@ class Humlet:
         def _dir_to(target_x: float, target_y: float) -> tuple[float, float]:
             dx, dy = self._wrapped_delta(env, target_x, target_y)
             dist = math.hypot(dx, dy)
-            if dist < 1e-6 or dist > self.sense_range:
+            if dist < 1e-6 or dist > self.effective_sense_range:
                 return 0.0, 0.0
             # scale by sense_range so result is in roughly [-1, 1]
-            return dx / self.sense_range, dy / self.sense_range
+            return dx / self.effective_sense_range, dy / self.effective_sense_range
 
 
         # ------------------------
@@ -600,7 +622,7 @@ class Humlet:
             if isinstance(obj, Food):
                 dx, dy = self._wrapped_delta(env, obj.x, obj.y)
                 d2 = dx * dx + dy * dy
-                if d2 < min_food_d2 and d2 <= (self.sense_range ** 2):
+                if d2 < min_food_d2 and d2 <= (self.effective_sense_range ** 2):
                     min_food_d2 = d2
                     vision_dx, vision_dy = _dir_to(obj.x, obj.y)
 
@@ -1002,7 +1024,7 @@ class Humlet:
         # 4b. Home-range pull: don't wander *too* far from birthplace
         home_dx, home_dy = self._wrapped_delta(env, self.home_x, self.home_y)
         home_dist = math.hypot(home_dx, home_dy)
-        if home_dist > self.sense_range * 0.8:
+        if home_dist > self.effective_sense_range * 0.8:
             # Only pull back if we're quite far from home
             pull = 0.1  # 0 = none, 1 = snap to home
             nx = home_dx / (home_dist + 1e-6)
@@ -1020,7 +1042,7 @@ class Humlet:
         # 5. Interpret brain outputs
 
         # movement
-        speed = .75 * self.speed_trait
+        speed = 0.75 * self.speed_trait * self.movement_scalar
         if self.pregnant:
             preg_progress = 1.0 - (self.gestation_timer / max(1, self.gestation_period))
             speed *= max(0.45, 0.9 - 0.3 * preg_progress)
@@ -1043,6 +1065,9 @@ class Humlet:
         if collided:
             self.vx *= 0.25
             self.vy *= 0.25
+            impact_speed = math.hypot(self.vx, self.vy)
+            impact_energy = (self.mass / 70.0) * (impact_speed ** 2)
+            self.health = max(0.0, self.health - 0.02 * impact_energy)
 
         # eating: much easier threshold so they actually refuel
         # hunger_need = 1 - energy/max_energy, so 0.3 ~= "below ~70% energy"
