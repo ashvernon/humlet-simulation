@@ -125,6 +125,8 @@ class Environment:
         self._productivity_per_tick = 0.0
         self._base_productivity_per_tick = 0.0
         self.avg_humidity = 0.5
+        self.land_fraction = 1.0
+        self.land_area = float(self.width * self.height)
 
         # ---------------------------------------------------------- #
         # Biome grid setup (Earth-like latitude + noise)
@@ -358,6 +360,9 @@ class Environment:
         avg_fertility = total_fertility / max(1, len(land_tiles))
         self.avg_humidity = sum(reg.humidity for reg in land_tiles) / max(1, len(land_tiles))
 
+        self.land_fraction = len(land_tiles) / max(1, self.rows * self.cols)
+        self.land_area = self.width * self.height * self.land_fraction
+
         # Capacity grows with fertile land area; keep within reasonable bounds
         self.food_capacity = max(80, int(total_fertility * 2.5))
 
@@ -367,6 +372,37 @@ class Environment:
 
         # Start with some biomass reserve but not a full map of food
         self.food_energy_pool = self.food_capacity * self.base_food_nutrition * 0.3
+
+    def estimate_carrying_capacity(
+        self,
+        energy_need_per_tick: float,
+        *,
+        area_per_humlet: float = 4000.0,
+    ) -> int:
+        """Estimate how many humlets the landscape can sustain.
+
+        The calculation blends available biomass, ongoing productivity, habitat
+        surface area, and air quality so population limits emerge from the
+        current environment instead of a hard-coded cap.
+        """
+
+        if energy_need_per_tick <= 0:
+            return 0
+
+        daily_budget = (self._productivity_per_tick * self.day_length) + self.food_energy_pool
+        daily_need = energy_need_per_tick * self.day_length
+
+        # Energy-based ceiling: how many agents could be fuelled per day.
+        energy_cap = daily_budget / max(1e-6, daily_need)
+
+        # Habitat-based ceiling: how many agents can physically coexist.
+        habitat_cap = self.land_area / max(1.0, area_per_humlet)
+
+        # Pollution/air-quality reduces the effective ceiling.
+        quality_factor = 0.6 + 0.4 * self.air_quality  # 0.6–1.0
+
+        carrying_capacity = min(energy_cap, habitat_cap) * quality_factor
+        return max(10, int(carrying_capacity))
 
     # ------------------------------------------------------------------ #
     # Region queries

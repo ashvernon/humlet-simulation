@@ -34,7 +34,7 @@ class Simulation:
 
         # Population & limits
         self.humlets: list[Humlet] = []
-        self.max_population = num_humlets * 3
+        self.max_population = num_humlets
 
         # Per-region trait stats for heatmaps
         self.region_stats = RegionTraitStats(self.env)
@@ -65,6 +65,9 @@ class Simulation:
             x = random.uniform(0, self.world_width)
             y = random.uniform(0, self.world_height)
             self.env.add_object(Shelter(x, y))
+
+        # Derive carrying capacity from the actual environment and agents
+        self._update_population_capacity()
 
 
         # Pygame setup
@@ -97,6 +100,27 @@ class Simulation:
 
         # Big brain overlay toggle
         self.show_brain_overlay = False
+
+    def _estimate_energy_need_per_tick(self) -> float:
+        """Average per-tick energy requirement of the current population."""
+
+        alive = [h for h in self.humlets if h.alive]
+        if not alive:
+            return 0.18  # reasonable default based on basal burn
+
+        needs = [h.estimated_energy_need(self.env) for h in alive]
+        return max(0.05, sum(needs) / len(needs))
+
+    def _update_population_capacity(self) -> None:
+        """Derive carrying capacity from energy flux and habitat size."""
+
+        energy_need = self._estimate_energy_need_per_tick()
+        env_capacity = self.env.estimate_carrying_capacity(energy_need)
+
+        # Never drop below the current alive population so deaths, not caps,
+        # control decline.
+        alive_count = sum(1 for h in self.humlets if h.alive)
+        self.max_population = max(alive_count, env_capacity)
 
 
     # --------------------------------------------------------------- #
@@ -376,6 +400,7 @@ class Simulation:
 
         # Update environment (time, climate, food respawn)
         self.env.update()
+        self._update_population_capacity()
 
         newborns: list[Humlet] = []
 
