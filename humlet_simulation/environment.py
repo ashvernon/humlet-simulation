@@ -14,18 +14,20 @@ from .village import Village
 class WorldObject:
     """Base class for objects in the world."""
 
-    def __init__(self, x: float, y: float):
+    def __init__(self, x: float, y: float, *, radius: float = 6.0, solid: bool = False):
         self.x = x
         self.y = y
         self.pickable = False
         self.type = "object"
+        self.radius = radius
+        self.solid = solid
 
 
 class Food(WorldObject):
     """Food resource that humlets can consume to gain energy."""
 
     def __init__(self, x: float, y: float, nutrition: float = 40.0):
-        super().__init__(x, y)
+        super().__init__(x, y, radius=4.0, solid=False)
         self.type = "food"
         self.nutrition = nutrition
         self.pickable = False  # eaten in place
@@ -35,7 +37,7 @@ class Rock(WorldObject):
     """A rock that can be picked up and used as a primitive tool/weapon."""
 
     def __init__(self, x: float, y: float):
-        super().__init__(x, y)
+        super().__init__(x, y, radius=6.0, solid=True)
         self.type = "rock"
         self.pickable = True
 
@@ -44,7 +46,7 @@ class Shelter(WorldObject):
     """A shelter that reduces safety pressure and energy loss."""
 
     def __init__(self, x: float, y: float, capacity: int = 5):
-        super().__init__(x, y)
+        super().__init__(x, y, radius=12.0, solid=True)
         self.type = "shelter"
         self.capacity = capacity
         self.pickable = False
@@ -54,7 +56,7 @@ class Tree(WorldObject):
     """Tree that can be harvested for wood."""
 
     def __init__(self, x: float, y: float, wood_amount: float = 20.0):
-        super().__init__(x, y)
+        super().__init__(x, y, radius=10.0, solid=True)
         self.type = "tree"
         self.wood_amount = wood_amount
         self.pickable = False  # harvested in place
@@ -64,7 +66,7 @@ class StoneDeposit(WorldObject):
     """Stone deposit that can be mined for stone."""
 
     def __init__(self, x: float, y: float, stone_amount: float = 20.0):
-        super().__init__(x, y)
+        super().__init__(x, y, radius=10.0, solid=True)
         self.type = "stone"
         self.stone_amount = stone_amount
         self.pickable = False
