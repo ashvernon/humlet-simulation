@@ -5,6 +5,7 @@ import pygame
 
 from .environment import Environment, Food, Rock, Shelter, Tree, StoneDeposit
 from .humlet import Humlet
+from .spatial_hash import SpatialHash
 from .stats import EvolutionStats, RegionTraitStats
 from .sensors.vision import Vision
 
@@ -38,6 +39,9 @@ class Simulation:
         # Per-region trait stats for heatmaps
         self.region_stats = RegionTraitStats(self.env)
         self.heatmap_mode = None  # or "met", "spd", "sns", "soc", "agg"
+
+        # Spatial index for fast neighbour lookups (rebuilt each tick)
+        self.humlet_index = SpatialHash(self.world_width, self.world_height, cell_size=80.0)
 
         # Initial population
         group_count = 10
@@ -375,9 +379,21 @@ class Simulation:
 
         newborns: list[Humlet] = []
 
+        # Prepare spatial index for neighbour-aware behaviours
+        self.humlet_index.clear()
+        for h in self.humlets:
+            if h.alive:
+                self.humlet_index.insert(h, h.x, h.y)
+
         # Update all humlets
         for h in self.humlets:
-            h.update(self.env, self.humlets, newborns, max_population=self.max_population)
+            h.update(
+                self.env,
+                self.humlets,
+                newborns,
+                max_population=self.max_population,
+                spatial_index=self.humlet_index,
+            )
 
         # Remove dead humlets
         self.humlets = [h for h in self.humlets if h.alive]
@@ -393,6 +409,12 @@ class Simulation:
         for h in self.humlets:
             self.region_stats.accumulate(h)
         self.region_stats.compute_means()
+
+        # Rebuild the spatial index for the next frame
+        self.humlet_index.clear()
+        for h in self.humlets:
+            if h.alive:
+                self.humlet_index.insert(h, h.x, h.y)
 
     # ------------------------------------------------------------------ #
     # Drawing

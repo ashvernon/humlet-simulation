@@ -683,7 +683,9 @@ class Humlet:
     def _update_needs(
         self,
         env: Environment,
-        humlets: List["Humlet"]
+        humlets: List["Humlet"],
+        *,
+        spatial_index=None,
     ) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
         """
         Update hunger_need, safety_need, social_need and return:
@@ -723,9 +725,20 @@ class Humlet:
         # ------------------------
         # Social: loneliness vs nearby peers
         # ------------------------
+        if spatial_index is not None:
+            candidates = spatial_index.query_radius_wrapped(
+                self.x,
+                self.y,
+                self.effective_sense_range,
+                env.width,
+                env.height,
+            )
+        else:
+            candidates = humlets
+
         neighbors = 0
-        for other in humlets:
-            if other is self or not other.alive:
+        for other in candidates:
+            if other is self or not getattr(other, "alive", False):
                 continue
             dx, dy = self._wrapped_delta(env, other.x, other.y)
             d2 = dx * dx + dy * dy
@@ -1141,7 +1154,9 @@ class Humlet:
         env: Environment,
         humlets: List["Humlet"],
         newborns: list["Humlet"],
-        max_population: int
+        max_population: int,
+        *,
+        spatial_index=None,
     ):
         if not self.alive:
             return
@@ -1155,7 +1170,9 @@ class Humlet:
         self._update_physical_growth()
 
         # 1. Update needs & perception
-        (food_dx, food_dy), (friend_dx, friend_dy), (shelter_dx, shelter_dy) = self._update_needs(env, humlets)
+        (food_dx, food_dy), (friend_dx, friend_dy), (shelter_dx, shelter_dy) = self._update_needs(
+            env, humlets, spatial_index=spatial_index
+        )
 
         pre_state = {
             "energy": self.energy,
