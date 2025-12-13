@@ -30,7 +30,7 @@ class Humlet:
     _next_family_id = 0
 
     # Genetic distance threshold for speciation
-    SPECIES_DISTANCE_THRESHOLD = 0.99
+    SPECIES_DISTANCE_THRESHOLD = 0.2
 
     # Brain sizes (fixed topology)
     # Inputs:
@@ -680,9 +680,29 @@ class Humlet:
     @staticmethod
     def genetic_distance(g1: dict, g2: dict) -> float:
         """
-        Simple numeric genetic distance between two genomes.
-        Uses average absolute difference over shared numeric keys.
+        Numeric genetic distance between two genomes, normalised per trait.
+
+        Raw absolute differences made "lifespan" dominate (changes of a few
+        hundred ticks dwarfed 1–2% tweaks on other traits), which caused new
+        families to appear almost every generation. Normalising by expected
+        trait ranges makes the score roughly scale-free and keeps speciation
+        tied to meaningful shifts.
         """
+
+        # Trait scales are derived from their intended clamp ranges
+        trait_ranges = {
+            "metabolism_rate": 0.07,  # 0.01–0.08
+            "speed_trait": 1.2,       # 0.6–1.8
+            "sense_range": 280.0,     # 40–320
+            "aggression": 1.0,        # 0–1
+            "sociability": 1.0,       # 0–1
+            "lifespan": 16000.0,      # 4_000–20_000
+            "curiosity_trait": 1.0,   # 0–1
+            "base_mass": 120.0,       # 30–150
+            "base_height": 1.5,       # 1.0–2.5
+            "frame_factor": 1.0,      # 0.5–1.5
+        }
+
         keys = g1.keys() & g2.keys()
         if not keys:
             return 0.0
@@ -691,8 +711,12 @@ class Humlet:
         for k in keys:
             v1 = g1[k]
             v2 = g2[k]
-            if isinstance(v1, (int, float)) and isinstance(v2, (int, float)):
-                diffs.append(abs(float(v1) - float(v2)))
+            if not isinstance(v1, (int, float)) or not isinstance(v2, (int, float)):
+                continue
+
+            scale = trait_ranges.get(k, max(abs(float(v1)), abs(float(v2)), 1.0))
+            delta = abs(float(v1) - float(v2)) / scale
+            diffs.append(min(delta, 1.0))
 
         if not diffs:
             return 0.0
