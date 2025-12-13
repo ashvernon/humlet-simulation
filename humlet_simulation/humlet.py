@@ -218,6 +218,12 @@ class Humlet:
         else:
             self.brain = brain
 
+        # Light-weight reinforcement bookkeeping so the brain is rewarded for
+        # behaviours that actually help survival (e.g. eating, moving toward
+        # food) instead of drifting randomly through mutation.
+        self.brain_fitness: float = 0.0
+        self.last_brain_reward: float = 0.0
+
         # ---------------------------
         # Reproduction control
         # ---------------------------
@@ -545,6 +551,94 @@ class Humlet:
         self.last_outputs = out
 
         return out
+
+    # ------------------------------------------------------------------ #
+    # Brain evaluation helpers (simple reinforcement signal)
+    # ------------------------------------------------------------------ #
+    def _brain_quality(self) -> float:
+        """Convert the running fitness score into a 0–1 confidence value."""
+
+        return 1.0 / (1.0 + math.exp(-self.brain_fitness))
+
+    def _nearest_food_distance(self, env: Environment) -> float:
+        """Return the Euclidean distance to the nearest food (wrapped)."""
+
+        min_d2 = float("inf")
+        for obj in env.objects:
+            if isinstance(obj, Food):
+                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+                d2 = dx * dx + dy * dy
+                if d2 < min_d2:
+                    min_d2 = d2
+
+        return math.sqrt(min_d2) if min_d2 < float("inf") else float("inf")
+
+    def _update_brain_reward(
+        self,
+        pre: dict,
+        post: dict,
+        eat_signal: float,
+        repro_signal: float,
+    ) -> None:
+        """
+        Compute a shaped reward for the last tick and update a running fitness.
+
+        The reward encourages:
+        - Gaining energy/health (eating, avoiding damage).
+        - Moving closer to food when hungry.
+        - Avoiding collisions and hunger crises.
+        """
+
+        reward = 0.0
+
+        # Energy / health deltas (scaled down to avoid huge jumps)
+        reward += 0.02 * (post["energy"] - pre["energy"])
+        reward += 0.01 * (post["health"] - pre["health"])
+
+        # Hunger relief is a positive signal; starving is penalised heavily
+        reward += 0.4 * (pre["hunger"] - post["hunger"])
+        if post["hunger"] > 0.8:
+            reward -= 0.5
+
+        # Move toward food when hungry (if any food exists)
+        if pre["food_dist"] < float("inf") and post["food_dist"] < float("inf"):
+            distance_delta = pre["food_dist"] - post["food_dist"]
+            if pre["hunger"] > 0.35:
+                reward += 0.25 * distance_delta / max(1.0, pre["food_dist"])
+
+        # Collisions or reckless reproduction are negative
+        if post.get("collided", False):
+            reward -= 0.2
+        if repro_signal > 0.5 and post["energy"] < self.repro_min_energy:
+            reward -= 0.3
+
+        # Mild living bonus to keep alive agents from degrading to -inf
+        reward += 0.01
+
+        # Exponential moving average to smooth noisy rewards
+        self.brain_fitness = 0.98 * self.brain_fitness + 0.02 * reward
+        self.last_brain_reward = reward
+
+    def _should_eat(self, eat_signal: float, hunger_level: float) -> bool:
+        """
+        Adaptive eating decision that trusts the brain more as fitness rises.
+        Reduces hard-coded thresholds so the controller is actually validated
+        against energy outcomes.
+        """
+
+        trust = self._brain_quality()
+        threshold = 0.55 - 0.30 * hunger_level - 0.20 * trust
+        threshold = max(0.05, min(0.7, threshold))
+
+        return eat_signal >= threshold or hunger_level > 0.6
+
+    def _should_reproduce(self, repro_signal: float, energy_norm: float) -> bool:
+        """Adaptive reproduction gate that leans on fitter brains."""
+
+        trust = self._brain_quality()
+        threshold = 0.70 - 0.25 * energy_norm - 0.15 * trust
+        threshold = max(0.3, min(0.8, threshold))
+        return repro_signal >= threshold
 
     # ------------------------------------------------------------------ #
     # Local environment sampling (biome-aware)
@@ -980,6 +1074,9 @@ class Humlet:
             return
         if self.energy < self.repro_min_energy:
             return
+        # Poorly performing brains are less likely to successfully clone
+        if self.brain_fitness < -2.0:
+            return
 
         # Only adults can reproduce
         if self._life_stage() != "adult":
@@ -998,6 +1095,7 @@ class Humlet:
         surplus = max(0.0, min(1.0, surplus))
         surplus *= fertility_factor
         surplus *= max(0.0, 1.0 - (temp_penalty + humidity_penalty))
+        surplus *= 0.5 + 0.5 * self._brain_quality()
         if random.random() > surplus:
             return
 
@@ -1058,6 +1156,13 @@ class Humlet:
 
         # 1. Update needs & perception
         (food_dx, food_dy), (friend_dx, friend_dy), (shelter_dx, shelter_dy) = self._update_needs(env, humlets)
+
+        pre_state = {
+            "energy": self.energy,
+            "health": self.health,
+            "hunger": self.hunger_need,
+            "food_dist": self._nearest_food_distance(env),
+        }
 
         # 2. Update higher-level motivations (esteem + curiosity)
         self._update_motivations()
@@ -1149,14 +1254,11 @@ class Humlet:
 
         # eating: much easier threshold so they actually refuel
         # hunger_need = 1 - energy/max_energy, so 0.3 ~= "below ~70% energy"
-        auto_eat = self.hunger_need > 0.3
-
-        # Also let a weaker eat_signal trigger eating
-        if eat_signal > 0.25 or auto_eat:
+        if self._should_eat(eat_signal, self.hunger_need):
             self._try_eat(env)
 
         # reproduction
-        if repro_signal > 0.5:
+        if self._should_reproduce(repro_signal, energy_norm):
             alive_count = sum(1 for h in humlets if h.alive)
             self.maybe_reproduce(env, newborns, population_size=alive_count, max_population=max_population)
 
@@ -1166,6 +1268,16 @@ class Humlet:
 
         # 6. Metabolic cost & environmental damage (and social + esteem effects)
         self._apply_metabolism_and_damage(env)
+
+        # Reinforcement-style reward for the brain based on outcomes of this tick
+        post_state = {
+            "energy": self.energy,
+            "health": self.health,
+            "hunger": max(0.0, min(1.0, 1.0 - (self.energy / self.max_energy))),
+            "food_dist": self._nearest_food_distance(env),
+            "collided": collided,
+        }
+        self._update_brain_reward(pre_state, post_state, eat_signal=eat_signal, repro_signal=repro_signal)
 
         # 7. Death checks
         eps = 0.05  # same threshold used when clamping
