@@ -1,7 +1,7 @@
 # humlet_simulation/stats.py
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import List
 
 from .humlet import Humlet
@@ -92,6 +92,14 @@ class EvolutionStats:
     max_history_len: int = 500
 
     latest: StatsSnapshot | None = None
+
+    def latest_as_dict(self) -> dict | None:
+        if self.latest is None:
+            return None
+        return asdict(self.latest)
+
+    def history_as_dicts(self) -> list[dict]:
+        return [asdict(s) for s in self.history]
 
     def update(self, tick: int, humlets: List[Humlet], env: Environment | None = None) -> None:
         alive = [h for h in humlets if h.alive]
