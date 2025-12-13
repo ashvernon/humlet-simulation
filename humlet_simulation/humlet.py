@@ -61,6 +61,8 @@ class Humlet:
         parent_id: int | None = None,
         family_id: int | None = None,
         generation: int = 0,
+        *,
+        seed: int | None = None,
     ):
         # ---------------------------
         # Identity & lineage
@@ -71,6 +73,11 @@ class Humlet:
 
 
         self.parent_id = parent_id
+
+        # Dedicated RNGs for reproducibility and per-agent replayability
+        self.seed = seed if seed is not None else random.randrange(2**32)
+        self.rng = random.Random(self.seed)
+        self.np_rng = np.random.default_rng(self.seed)
 
         # If no family_id, this individual starts a new family/species line
         if family_id is None:
@@ -87,14 +94,14 @@ class Humlet:
         # Position (clustered by group)
         # ---------------------------
         if group_id is None:
-            self.x = random.uniform(0, env.width)
-            self.y = random.uniform(0, env.height)
+            self.x = self.rng.uniform(0, env.width)
+            self.y = self.rng.uniform(0, env.height)
         else:
             rng = random.Random(group_id)
             center_x = rng.uniform(env.width * 0.2, env.width * 0.8)
             center_y = rng.uniform(env.height * 0.2, env.height * 0.8)
-            self.x = max(0, min(env.width, center_x + random.gauss(0, env.width * 0.05)))
-            self.y = max(0, min(env.height, center_y + random.gauss(0, env.height * 0.05)))
+            self.x = max(0, min(env.width, center_x + self.rng.gauss(0, env.width * 0.05)))
+            self.y = max(0, min(env.height, center_y + self.rng.gauss(0, env.width * 0.05)))
 
         # Home-range anchor: where this Humlet "grew up"
         self.home_x = self.x
@@ -104,7 +111,7 @@ class Humlet:
         self.vy = 0.0
 
         # Facing direction (radians) for cone/raycast vision
-        self.direction = random.uniform(0, 2 * math.pi)
+        self.direction = self.rng.uniform(0, 2 * math.pi)
 
         # Use sense_range so smell & "vision" are on a similar scale
         # ---------------------------
@@ -129,14 +136,14 @@ class Humlet:
         # ---------------------------
         # Identity / social
         # ---------------------------
-        self.group_id = group_id if group_id is not None else random.randrange(4)
+        self.group_id = group_id if group_id is not None else self.rng.randrange(4)
         self.neighbor_count = 0  # updated each tick in _update_needs
 
         # ---------------------------
         # Physiology
         # ---------------------------
         self.max_energy = 100.0
-        self.energy = random.uniform(60.0, 90.0)
+        self.energy = self.rng.uniform(60.0, 90.0)
 
         self.max_health = 100.0
         self.health = self.max_health
@@ -152,28 +159,25 @@ class Humlet:
         # Higher-level motivation signals (0–1)
         self.esteem_level = 0.0
         self.curiosity_drive = 0.0
-
-        # ---------------------------
         # Genome (traits)
         # ---------------------------
         if genome is None:
             self.genome = {
-                "metabolism_rate": random.uniform(0.02, 0.06),   # baseline energy drain
-                "speed_trait": random.uniform(0.8, 1.5),         # movement factor
-                "sense_range": random.uniform(20.0, 100.0),      # vision radius
-                "aggression": random.uniform(0.0, 1.0),          # 0 = peaceful, 1 = aggressive (not used yet)
-                "sociability": random.uniform(0.0, 1.0),         # 0 = loner, 1 = highly social
-                "lifespan": random.randint(4000, 20000),         # ticks
-                "curiosity_trait": random.uniform(0.0, 1.0),     # baseline tendency to explore
+                "metabolism_rate": self.rng.uniform(0.02, 0.06),   # baseline energy drain
+                "speed_trait": self.rng.uniform(0.8, 1.5),         # movement factor
+                "sense_range": self.rng.uniform(20.0, 100.0),      # vision radius
+                "aggression": self.rng.uniform(0.0, 1.0),          # 0 = peaceful, 1 = aggressive (not used yet)
+                "sociability": self.rng.uniform(0.0, 1.0),         # 0 = loner, 1 = highly social
+                "lifespan": self.rng.randint(4000, 20000),         # ticks
+                "curiosity_trait": self.rng.uniform(0.0, 1.0),     # baseline tendency to explore
 
                 # ---- NEW: physical traits ----
-                "base_mass": random.uniform(50.0, 90.0),         # kg at adulthood
-                "base_height": random.uniform(1.4, 2.0),         # metres at adulthood
-                "frame_factor": random.uniform(0.8, 1.2),        # stocky vs slender
+                "base_mass": self.rng.uniform(50.0, 90.0),         # kg at adulthood
+                "base_height": self.rng.uniform(1.4, 2.0),         # metres at adulthood
+                "frame_factor": self.rng.uniform(0.8, 1.2),        # stocky vs slender
             }
         else:
             self.genome = genome
-
         # Aliases for convenience
         self.metabolism_rate = self.genome["metabolism_rate"]
         self.speed_trait = self.genome["speed_trait"]
@@ -210,9 +214,9 @@ class Humlet:
         # ---------------------------
         if brain is None:
             self.brain = {
-                "W1": np.random.uniform(-1, 1, (self.N_HIDDEN, self.N_INPUTS)),
+                "W1": self.np_rng.uniform(-1, 1, (self.N_HIDDEN, self.N_INPUTS)),
                 "b1": np.zeros(self.N_HIDDEN),
-                "W2": np.random.uniform(-1, 1, (self.N_OUTPUTS, self.N_HIDDEN)),
+                "W2": self.np_rng.uniform(-1, 1, (self.N_OUTPUTS, self.N_HIDDEN)),
                 "b2": np.zeros(self.N_OUTPUTS),
             }
         else:
@@ -235,6 +239,7 @@ class Humlet:
         self.embryo_genome: dict | None = None
         self.embryo_brain: dict | None = None
         self.embryo_family_id: int | None = None
+        self.embryo_seed: int | None = None
 
         # ---------------------------
         # Inventory (for tools like rocks)
@@ -971,17 +976,17 @@ class Humlet:
         for k, v in parent_genome.items():
             if k == "lifespan":
                 # Much smaller lifespan noise, around ±200 ticks
-                delta = int(random.gauss(0, 200))
+                delta = int(self.rng.gauss(0, 200))
                 child_genome[k] = max(800, v + delta)
                 continue
 
             # Sometimes: no mutation at all → straight copy
-            if random.random() > mutation_prob:
+            if self.rng.random() > mutation_prob:
                 child_genome[k] = v
                 continue
 
             # Otherwise: small multiplicative tweak
-            factor = random.gauss(1.0, small_sd)
+            factor = self.rng.gauss(1.0, small_sd)
             mutated = v * factor
             child_genome[k] = clamp(k, mutated)
 
@@ -1004,8 +1009,8 @@ class Humlet:
             arr = np.array(parent_brain[key], copy=True)
 
             if key in ("b1", "b2"):
-                mask = np.random.rand(*arr.shape) < tweak_prob
-                arr = arr + np.random.normal(0.0, noise_sd, size=arr.shape) * mask
+                mask = self.np_rng.random(arr.shape) < tweak_prob
+                arr = arr + self.np_rng.normal(0.0, noise_sd, size=arr.shape) * mask
                 child_brain[key] = np.clip(arr, -w_clip, w_clip)
                 continue
 
@@ -1014,16 +1019,16 @@ class Humlet:
             was_zero     = ~was_existing
 
             # 1) Tweak existing connections only (optional, but usually cleaner)
-            tweak_mask = (np.random.rand(*arr.shape) < tweak_prob) & was_existing
-            arr = arr + np.random.normal(0.0, noise_sd, size=arr.shape) * tweak_mask
+            tweak_mask = (self.np_rng.random(arr.shape) < tweak_prob) & was_existing
+            arr = arr + self.np_rng.normal(0.0, noise_sd, size=arr.shape) * tweak_mask
 
             # 2) Delete some existing connections
-            del_mask = (np.random.rand(*arr.shape) < del_prob) & was_existing
+            del_mask = (self.np_rng.random(arr.shape) < del_prob) & was_existing
             arr[del_mask] = 0.0
 
             # 3) Add some new connections only where it was *truly* zero
-            add_mask = (np.random.rand(*arr.shape) < add_prob) & was_zero
-            arr[add_mask] = np.random.normal(0.0, add_sd, size=arr.shape)[add_mask]
+            add_mask = (self.np_rng.random(arr.shape) < add_prob) & was_zero
+            arr[add_mask] = self.np_rng.normal(0.0, add_sd, size=arr.shape)[add_mask]
 
             child_brain[key] = np.clip(arr, -w_clip, w_clip)
 
@@ -1047,10 +1052,11 @@ class Humlet:
             parent_id=self.id,
             family_id=self.embryo_family_id,
             generation=self.generation + 1,
+            seed=self.embryo_seed,
         )
 
-        child.x = (self.x + random.uniform(-5, 5)) % env.width
-        child.y = (self.y + random.uniform(-5, 5)) % env.height
+        child.x = (self.x + self.rng.uniform(-5, 5)) % env.width
+        child.y = (self.y + self.rng.uniform(-5, 5)) % env.height
 
         newborns.append(child)
         self.offspring_count += 1
@@ -1067,6 +1073,7 @@ class Humlet:
         self.embryo_genome = None
         self.embryo_brain = None
         self.embryo_family_id = None
+        self.embryo_seed = None
 
     def estimated_energy_need(self, env: Environment) -> float:
         """Rough per-tick energy demand for carrying capacity estimates."""
@@ -1138,7 +1145,7 @@ class Humlet:
         surplus *= fertility_factor
         surplus *= max(0.0, 1.0 - (temp_penalty + humidity_penalty))
         surplus *= 0.5 + 0.5 * self._brain_quality()
-        if random.random() > surplus:
+        if self.rng.random() > surplus:
             return
 
         # Pay reproduction cost up front and lock parent into gestation
@@ -1150,6 +1157,7 @@ class Humlet:
         # Create embryo with mutated genome & brain and stash until birth
         self.embryo_genome = self._mutate_genome(self.genome)
         self.embryo_brain = self._mutate_brain(self.brain)
+        self.embryo_seed = self.rng.randrange(2**32)
 
         is_new_species = self._is_new_species(self.embryo_genome)
         self.embryo_family_id = None if is_new_species else self.family_id
@@ -1238,7 +1246,7 @@ class Humlet:
 
         # 4a. Curiosity-driven exploration noise
         if self.curiosity_drive > 0.0:
-            angle = random.uniform(0, 2 * math.pi)
+            angle = self.rng.uniform(0, 2 * math.pi)
             rx = math.cos(angle)
             ry = math.sin(angle)
             curiosity_strength = 0.3

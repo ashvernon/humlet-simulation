@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import random
 import pygame
+import numpy as np
 
 from .environment import Environment, Food, Rock, Shelter, Tree, StoneDeposit
 from .humlet import Humlet
@@ -19,6 +21,9 @@ class Simulation:
         num_humlets: int = 200,
         panel_width: int = 260,
         margin: int = 10,
+        *,
+        seed: int | None = None,
+        trajectory_log_path: str | None = None,
     ):
         # --- Core geometry / layout ---
         self.world_width = world_width
@@ -28,6 +33,14 @@ class Simulation:
 
         # Two inspector panels on the right
         self.num_panels = 2
+
+        # Randomness & reproducibility
+        self.base_seed = seed if seed is not None else random.randrange(2**32)
+        random.seed(self.base_seed)
+        np.random.seed(self.base_seed)
+        self.seed_rng = random.Random(self.base_seed)
+        self.agent_seeds: dict[int, int] = {}
+        self.trajectory_log_path = trajectory_log_path
 
         # World (simulation space)
         self.env = Environment(self.world_width, self.world_height)
@@ -47,23 +60,25 @@ class Simulation:
         group_count = 10
         for i in range(num_humlets):
             group_id = i % group_count
-            humlet = Humlet(self.env, group_id=group_id)
+            seed_value = self.seed_rng.randrange(2**32)
+            humlet = Humlet(self.env, group_id=group_id, seed=seed_value)
             self.humlets.append(humlet)
+            self.agent_seeds[humlet.id] = seed_value
 
         # Initial resources
         for _ in range(80):
-            x = random.uniform(0, self.world_width)
-            y = random.uniform(0, self.world_height)
+            x = self.seed_rng.uniform(0, self.world_width)
+            y = self.seed_rng.uniform(0, self.world_height)
             self.env.add_object(Food(x, y, nutrition=40.0))
 
         for _ in range(30):
-            x = random.uniform(0, self.world_width)
-            y = random.uniform(0, self.world_height)
+            x = self.seed_rng.uniform(0, self.world_width)
+            y = self.seed_rng.uniform(0, self.world_height)
             self.env.add_object(Rock(x, y))
 
         for _ in range(6):
-            x = random.uniform(0, self.world_width)
-            y = random.uniform(0, self.world_height)
+            x = self.seed_rng.uniform(0, self.world_width)
+            y = self.seed_rng.uniform(0, self.world_height)
             self.env.add_object(Shelter(x, y))
 
         # Derive carrying capacity from the actual environment and agents
@@ -100,6 +115,32 @@ class Simulation:
 
         # Big brain overlay toggle
         self.show_brain_overlay = False
+
+    def _append_trajectory_log(self) -> None:
+        """Persist a machine-readable record of this tick's state."""
+
+        snapshot = self.stats.latest_as_dict()
+        if snapshot is None:
+            return
+
+        record = {
+            "tick": self.tick,
+            "base_seed": self.base_seed,
+            "agent_seeds": self.agent_seeds,
+            "snapshot": snapshot,
+        }
+
+        with open(self.trajectory_log_path, "a", encoding="utf-8") as f:
+            json.dump(record, f)
+            f.write("\n")
+
+    def seed_manifest(self) -> dict:
+        """Expose the seeds used for the run for offline replay."""
+
+        return {
+            "base_seed": self.base_seed,
+            "agent_seeds": dict(self.agent_seeds),
+        }
 
     def _estimate_energy_need_per_tick(self) -> float:
         """Average per-tick energy requirement of the current population."""
@@ -423,11 +464,17 @@ class Simulation:
         # Remove dead humlets
         self.humlets = [h for h in self.humlets if h.alive]
 
-        # Add newborns
+        # Add newborns and capture their seeds for reproducibility
         self.humlets.extend(newborns)
+        for h in newborns:
+            self.agent_seeds[h.id] = getattr(h, "seed", None)
 
         # Update evolution / population statistics
         self.stats.update(self.tick, self.humlets, self.env)
+
+        # Persist evolutionary trajectory if requested
+        if self.trajectory_log_path is not None:
+            self._append_trajectory_log()
 
         # Update per-region trait stats for heatmaps
         self.region_stats.reset()
