@@ -332,6 +332,87 @@ class Humlet:
 
         return dx, dy
 
+    def _wrapped_delta_from(self, env: Environment, sx: float, sy: float, tx: float, ty: float) -> tuple[float, float]:
+        """Toroidal delta computed from an arbitrary source point."""
+        dx = tx - sx
+        dy = ty - sy
+
+        half_w = env.width * 0.5
+        half_h = env.height * 0.5
+
+        if dx > half_w:
+            dx -= env.width
+        elif dx < -half_w:
+            dx += env.width
+
+        if dy > half_h:
+            dy -= env.height
+        elif dy < -half_h:
+            dy += env.height
+
+        return dx, dy
+
+    def _collision_radius(self) -> float:
+        """Body radius scales with current height, enforcing space occupancy."""
+        return max(4.0, self.height * 3.0)
+
+    def _resolve_collisions(
+        self,
+        env: Environment,
+        humlets: list["Humlet"],
+        proposed_x: float,
+        proposed_y: float,
+    ) -> tuple[float, float, bool]:
+        """
+        Push the agent out of overlapping neighbours or solid world objects.
+
+        Returns corrected (x, y) and a flag indicating whether a collision occurred.
+        """
+        collided = False
+        x = proposed_x
+        y = proposed_y
+        self_radius = self._collision_radius()
+
+        # Resolve against other humlets
+        for other in humlets:
+            if other is self or not other.alive:
+                continue
+            dx, dy = self._wrapped_delta_from(env, x, y, other.x, other.y)
+            dist = math.hypot(dx, dy)
+            min_sep = self_radius + other._collision_radius()
+            if dist < 1e-6 or dist >= min_sep:
+                continue
+
+            collided = True
+            overlap = min_sep - dist
+            nx = dx / (dist + 1e-6)
+            ny = dy / (dist + 1e-6)
+            x -= nx * overlap
+            y -= ny * overlap
+            x %= env.width
+            y %= env.height
+
+        # Resolve against solid world objects (rocks, trees, shelters, stone)
+        for obj in env.objects:
+            if not getattr(obj, "solid", False):
+                continue
+            dx, dy = self._wrapped_delta_from(env, x, y, obj.x, obj.y)
+            dist = math.hypot(dx, dy)
+            min_sep = self_radius + getattr(obj, "radius", 6.0)
+            if dist < 1e-6 or dist >= min_sep:
+                continue
+
+            collided = True
+            overlap = min_sep - dist
+            nx = dx / (dist + 1e-6)
+            ny = dy / (dist + 1e-6)
+            x -= nx * overlap
+            y -= ny * overlap
+            x %= env.width
+            y %= env.height
+
+        return x, y, collided
+
 
     # ------------------------------------------------------------------ #
     # Neural network forward pass
@@ -865,9 +946,17 @@ class Humlet:
             self.direction = math.atan2(self.vy, self.vx)
 
 
-        # position update (toroidal)
-        self.x = (self.x + self.vx) % env.width
-        self.y = (self.y + self.vy) % env.height
+        # position update (toroidal) with collision resolution
+        proposed_x = (self.x + self.vx) % env.width
+        proposed_y = (self.y + self.vy) % env.height
+        corrected_x, corrected_y, collided = self._resolve_collisions(
+            env, humlets, proposed_x, proposed_y
+        )
+        self.x = corrected_x
+        self.y = corrected_y
+        if collided:
+            self.vx *= 0.25
+            self.vy *= 0.25
 
         # eating: much easier threshold so they actually refuel
         # hunger_need = 1 - energy/max_energy, so 0.3 ~= "below ~70% energy"
