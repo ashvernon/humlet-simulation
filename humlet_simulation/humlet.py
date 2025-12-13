@@ -221,6 +221,12 @@ class Humlet:
         # ---------------------------
         self.repro_cooldown = 0
         self.repro_min_energy = 55.0
+        self.pregnant: bool = False
+        self.gestation_timer: int = 0
+        self.gestation_period: int = 0
+        self.embryo_genome: dict | None = None
+        self.embryo_brain: dict | None = None
+        self.embryo_family_id: int | None = None
 
         # ---------------------------
         # Inventory (for tools like rocks)
@@ -830,6 +836,45 @@ class Humlet:
 
         return child_brain
 
+    def _gestation_ticks(self) -> int:
+        """Derive a gestation length tied to lifespan to slow explosive cloning."""
+        base = int(self.lifespan * 0.08)
+        return max(400, min(1600, base))
+
+    def _give_birth(self, env: Environment, newborns: list["Humlet"]):
+        """Finish gestation and spawn the stored embryo."""
+        if not self.pregnant or self.embryo_genome is None or self.embryo_brain is None:
+            return
+
+        child = Humlet(
+            env,
+            group_id=self.group_id,
+            genome=self.embryo_genome,
+            brain=self.embryo_brain,
+            parent_id=self.id,
+            family_id=self.embryo_family_id,
+            generation=self.generation + 1,
+        )
+
+        child.x = (self.x + random.uniform(-5, 5)) % env.width
+        child.y = (self.y + random.uniform(-5, 5)) % env.height
+
+        newborns.append(child)
+        self.offspring_count += 1
+
+        # Post-birth fatigue: force a cooldown and some energy loss to slow churn
+        self.energy = max(0.0, self.energy - self.max_energy * 0.1)
+        self.health = max(0.0, self.health - 3.0)
+        self.repro_cooldown = max(self.repro_cooldown, 300)
+
+        # Reset gestation state
+        self.pregnant = False
+        self.gestation_timer = 0
+        self.gestation_period = 0
+        self.embryo_genome = None
+        self.embryo_brain = None
+        self.embryo_family_id = None
+
     def maybe_reproduce(
         self,
         env: Environment,
@@ -838,6 +883,8 @@ class Humlet:
         max_population: int
     ):
         """Asexual reproduction: clone with mutation if energy & cooldown allow."""
+        if self.pregnant:
+            return
         if not self.alive:
             return
         if population_size >= max_population:
@@ -858,34 +905,39 @@ class Humlet:
         if random.random() > surplus:
             return
 
-        # Pay reproduction cost
-        self.energy *= 0.65  # 35% energy spent making offspring
-        self.repro_cooldown = 600
+        # Pay reproduction cost up front and lock parent into gestation
+        gestation_period = self._gestation_ticks()
+        upfront_cost = self.energy * 0.45  # heavier investment than before
+        self.energy -= upfront_cost
+        self.repro_cooldown = gestation_period + 400  # postpartum rest baked in
 
-        # Create child with mutated genome & brain
-        child_genome = self._mutate_genome(self.genome)
-        child_brain = self._mutate_brain(self.brain)
+        # Create embryo with mutated genome & brain and stash until birth
+        self.embryo_genome = self._mutate_genome(self.genome)
+        self.embryo_brain = self._mutate_brain(self.brain)
 
-        # Decide if this counts as a new species (new family line)
-        is_new_species = self._is_new_species(child_genome)
-        child_family_id = None if is_new_species else self.family_id
+        is_new_species = self._is_new_species(self.embryo_genome)
+        self.embryo_family_id = None if is_new_species else self.family_id
 
-        child = Humlet(
-            env,
-            group_id=self.group_id,
-            genome=child_genome,
-            brain=child_brain,
-            parent_id=self.id,
-            family_id=child_family_id,
-            generation=self.generation + 1,
-        )
+        self.pregnant = True
+        self.gestation_period = gestation_period
+        self.gestation_timer = gestation_period
 
-        # Spawn child near parent (wrap-safe)
-        child.x = (self.x + random.uniform(-5, 5)) % env.width
-        child.y = (self.y + random.uniform(-5, 5)) % env.height
+    def _progress_gestation(self, env: Environment, newborns: list["Humlet"]):
+        if not self.pregnant:
+            return
 
-        newborns.append(child)
-        self.offspring_count += 1
+        # Gradually burn extra energy as the fetus grows
+        progress = 1.0 - (self.gestation_timer / max(1, self.gestation_period))
+        gestation_burn = 0.05 + 0.08 * progress
+        self.energy -= gestation_burn
+
+        # Late-stage pregnancy slows the parent and risks health if starving
+        if self.energy <= 0:
+            self.health = max(0.0, self.health - 0.05)
+
+        self.gestation_timer -= 1
+        if self.gestation_timer <= 0:
+            self._give_birth(env, newborns)
 
     # ------------------------------------------------------------------ #
     # Main update per tick
@@ -901,6 +953,9 @@ class Humlet:
             return
 
         self.age += 1
+
+        # Pregnancy advances independent of brain signals
+        self._progress_gestation(env, newborns)
 
         # Physical growth & derived capacities
         self._update_physical_growth()
@@ -966,6 +1021,9 @@ class Humlet:
 
         # movement
         speed = .75 * self.speed_trait
+        if self.pregnant:
+            preg_progress = 1.0 - (self.gestation_timer / max(1, self.gestation_period))
+            speed *= max(0.45, 0.9 - 0.3 * preg_progress)
         self.vx = move_x * speed
         self.vy = move_y * speed
 
