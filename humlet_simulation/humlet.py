@@ -1068,6 +1068,35 @@ class Humlet:
         self.embryo_brain = None
         self.embryo_family_id = None
 
+    def estimated_energy_need(self, env: Environment) -> float:
+        """Rough per-tick energy demand for carrying capacity estimates."""
+
+        mass = max(1.0, self.mass)
+        mass_ratio = mass / 70.0
+        metabolic_intensity = 0.7 + 10.0 * max(0.0, self.metabolism_rate - 0.02)
+        basal_burn = 0.12 * (mass_ratio ** 0.75) * metabolic_intensity
+
+        avg_speed = 0.6 * self.speed_trait * self.movement_scalar
+        locomotion_cost = 0.04 * mass_ratio * (avg_speed ** 2)
+        locomotion_cost *= (0.9 + 0.15 * self.speed_trait)
+        locomotion_cost *= (0.8 + 0.4 * getattr(env, "air_density", 1.0))
+
+        if hasattr(env, "get_local_temperature"):
+            local_temp = env.get_local_temperature(self.x, self.y)
+        else:
+            local_temp = getattr(env, "temperature", 20.0)
+
+        if local_temp < self.comfort_temp_min:
+            temp_delta = self.comfort_temp_min - local_temp
+            thermo_cost = 0.004 * mass_ratio * temp_delta
+        elif local_temp > self.comfort_temp_max:
+            temp_delta = local_temp - self.comfort_temp_max
+            thermo_cost = 0.003 * mass_ratio * temp_delta
+        else:
+            thermo_cost = 0.0
+
+        return max(0.05, basal_burn + locomotion_cost + thermo_cost)
+
     def maybe_reproduce(
         self,
         env: Environment,
