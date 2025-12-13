@@ -650,6 +650,29 @@ class Simulation:
             y = draw_bar("Life stage", age_frac, x, y, age_col)
             y += 2
 
+            # --- Reproduction ---
+            y = draw_header("--- Reproduction ---", x, y, (255, 200, 200))
+            pregnant = getattr(h, "pregnant", False)
+            gestation_period = getattr(h, "gestation_period", 0)
+            gestation_timer = getattr(h, "gestation_timer", 0)
+            repro_cooldown = getattr(h, "repro_cooldown", 0)
+            min_energy = getattr(h, "repro_min_energy", 0.0)
+
+            if pregnant and gestation_period > 0:
+                progress = 1.0 - (gestation_timer / max(1, gestation_period))
+            else:
+                progress = 0.0
+
+            y = draw_line(
+                f"Status : {'Pregnant' if pregnant else 'Not pregnant'}", x, y
+            )
+            if pregnant:
+                y = draw_line(f"Time left : {gestation_timer} ticks", x, y)
+                y = draw_bar("Gestation", progress, x, y, (255, 170, 170))
+            y = draw_line(f"Cooldown : {repro_cooldown} ticks", x, y)
+            y = draw_line(f"Min energy: {min_energy:.1f}", x, y)
+            y += 2
+
             # --- Physical body ---
             y = draw_header("--- Body ---", x, y, (200, 230, 255))
             y = draw_line(f"Mass   : {getattr(h, 'mass', 0.0):.1f} kg", x, y)
@@ -776,6 +799,12 @@ class Simulation:
             y2 = draw_header("== Population Stats ==", x2, y2, (255, 230, 140))
             y2 = draw_line(f"Tick       : {s.tick}", x2, y2)
             y2 = draw_line(f"Population : {s.population}", x2, y2)
+            y2 = draw_line(f"Pregnant   : {s.pregnant_count}", x2, y2)
+            if s.pregnant_count > 0:
+                gestate_text = f"Avg gestate: {s.avg_gestation_progress * 100:.1f}%"
+            else:
+                gestate_text = "Avg gestate: --"
+            y2 = draw_line(gestate_text, x2, y2)
             y2 = draw_line(f"Families   : {s.num_families}", x2, y2)
             y2 = draw_line(f"Max Gen    : {s.max_generation}", x2, y2)
             y2 = draw_line(f"Avg Gen    : {s.avg_generation:.2f}", x2, y2)
