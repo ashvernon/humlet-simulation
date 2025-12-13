@@ -43,24 +43,6 @@ python main.py
 
 Defaults create a 1200×1000 world with 100 humlets. Adjust `world_width`, `world_height`, or `num_humlets` in `main.py` to explore different densities.
 
-### Getting this README into your branch
-If you do not see `README.md` in your local checkout, synchronize with the latest `main` branch and bring it into your working branch:
-
-1. Update your local `main`:
-   ```bash
-   git checkout main
-   git pull origin main
-   ```
-2. Integrate the README into your feature branch:
-   ```bash
-   git checkout <your-feature-branch>
-   git merge main   # or: git rebase main
-   ```
-3. Confirm the file is present at the repo root:
-   ```bash
-   ls
-   ```
-
 ### Controls
 - **Left click**: select the nearest humlet in the world pane.
 - **B**: toggle the large brain overlay for the selected individual.
