@@ -800,11 +800,11 @@ class Simulation:
             y2 = draw_line(f"Tick       : {s.tick}", x2, y2)
             y2 = draw_line(f"Population : {s.population}", x2, y2)
             y2 = draw_line(f"Pregnant   : {s.pregnant_count}", x2, y2)
-            if s.pregnant_count > 0:
-                gestate_text = f"Avg gestate: {s.avg_gestation_progress * 100:.1f}%"
-            else:
-                gestate_text = "Avg gestate: --"
-            y2 = draw_line(gestate_text, x2, y2)
+            y2 = draw_line(
+                f"Avg gestate: {s.avg_gestation_progress * 100:.1f}%",
+                x2,
+                y2,
+            )
             y2 = draw_line(f"Families   : {s.num_families}", x2, y2)
             y2 = draw_line(f"Max Gen    : {s.max_generation}", x2, y2)
             y2 = draw_line(f"Avg Gen    : {s.avg_generation:.2f}", x2, y2)
