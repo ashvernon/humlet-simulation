@@ -384,6 +384,51 @@ class Humlet:
 
         return dx, dy
 
+    def _has_line_of_sight(
+        self,
+        env: Environment,
+        tx: float,
+        ty: float,
+        *,
+        target: object | None = None,
+        target_radius: float = 0.0,
+    ) -> bool:
+        """Check whether a straight path to (tx, ty) is blocked by solids.
+
+        Uses the toroidal shortest path and treats any solid world object whose
+        collision circle intersects that path (and is closer than the target)
+        as occluding.
+        """
+
+        dx, dy = self._wrapped_delta(env, tx, ty)
+        seg_len = math.hypot(dx, dy)
+        if seg_len < 1e-6:
+            return True
+
+        # Segment from (0, 0) to (dx, dy); compare obstacles in that frame
+        for obj in env.objects:
+            if obj is target:
+                continue
+            if not getattr(obj, "solid", False):
+                continue
+
+            ox, oy = self._wrapped_delta(env, obj.x, obj.y)
+
+            # Project obstacle centre onto the path
+            t = (ox * dx + oy * dy) / (seg_len * seg_len)
+            if t <= 0.0 or t >= 1.0:
+                continue  # behind us or past the target
+
+            closest_dist = abs(ox * dy - oy * dx) / seg_len
+            clearance = getattr(obj, "radius", 0.0) + target_radius + 1.0
+            if closest_dist < clearance:
+                # Also ensure the obstacle is closer than the target itself
+                along_dist = t * seg_len
+                if along_dist < seg_len:
+                    return False
+
+        return True
+
     def _collision_radius(self) -> float:
         """Body radius scales with current height, enforcing space occupancy."""
         return max(4.0, self.height * 3.0)
@@ -623,6 +668,8 @@ class Humlet:
                 dx, dy = self._wrapped_delta(env, obj.x, obj.y)
                 d2 = dx * dx + dy * dy
                 if d2 < min_food_d2 and d2 <= (self.effective_sense_range ** 2):
+                    if not self._has_line_of_sight(env, obj.x, obj.y, target=obj, target_radius=getattr(obj, "radius", 0.0)):
+                        continue
                     min_food_d2 = d2
                     vision_dx, vision_dy = _dir_to(obj.x, obj.y)
 

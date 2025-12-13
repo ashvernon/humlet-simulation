@@ -13,6 +13,8 @@ class Smell:
         self.sensitivity = sensitivity
 
     def sense(self, environment):
+        """Return a normalised scent direction considering wrap + occlusion."""
+
         ox, oy = self.owner.x, self.owner.y
 
         fx = fy = 0.0  # scent direction vector
@@ -22,13 +24,23 @@ class Smell:
             if getattr(obj, "type", None) != "food":
                 continue
 
-            dx = obj.x - ox
-            dy = obj.y - oy
+            # Smallest toroidal offset toward this object
+            if hasattr(self.owner, "_wrapped_delta"):
+                dx, dy = self.owner._wrapped_delta(environment, obj.x, obj.y)
+            else:
+                dx = obj.x - ox
+                dy = obj.y - oy
+
             dist = math.hypot(dx, dy)
 
             # Ignore anything outside smell range or at exact same location
             if dist <= 1e-6 or dist > self.range:
                 continue
+
+            # Block scent if a solid object occludes the shortest path
+            if hasattr(self.owner, "_has_line_of_sight"):
+                if not self.owner._has_line_of_sight(environment, obj.x, obj.y, target=obj, target_radius=getattr(obj, "radius", 0.0)):
+                    continue
 
             # Stronger weight for closer food
             strength = (self.range - dist) / self.range
