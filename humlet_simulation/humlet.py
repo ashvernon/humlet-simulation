@@ -231,6 +231,10 @@ class Humlet:
         self.carry_stone: float = 0.0
         self.carry_capacity: float = 20.0  # total units of resources
 
+        # Thermoregulation comfort band (°C) for metabolic scaling
+        self.comfort_temp_min = 18.0
+        self.comfort_temp_max = 28.0
+
     # ------------------------------------------------------------------ #
     # Life stage & growth
     # ------------------------------------------------------------------ #
@@ -1073,10 +1077,35 @@ class Humlet:
     def _apply_metabolism_and_damage(self, env: Environment):
         """Apply energy drain, social energy adjust, esteem tweak, and environmental health impacts."""
         # ---------------- Basal + movement energy cost ----------------
-        self.energy -= self.metabolism_rate * 4.0
+        mass = max(1.0, self.mass)
+        mass_ratio = mass / 70.0  # relative to ~average adult
 
-        move_cost = 0.005 * (self.vx * self.vx + self.vy * self.vy)
-        self.energy -= move_cost
+        # Kleiber-like basal metabolic scaling that ties drain to body size
+        metabolic_intensity = 0.7 + 10.0 * max(0.0, self.metabolism_rate - 0.02)
+        basal_burn = 0.12 * (mass_ratio ** 0.75) * metabolic_intensity
+
+        # Movement cost scales with kinetic effort, speed trait, and air density
+        speed_mag = math.hypot(self.vx, self.vy)
+        locomotion_cost = 0.04 * mass_ratio * (speed_mag ** 2)
+        locomotion_cost *= (0.9 + 0.15 * self.speed_trait)
+        locomotion_cost *= (0.8 + 0.4 * getattr(env, "air_density", 1.0))
+
+        # Thermoregulation: energy cost grows with deviation from comfort band
+        if hasattr(env, "get_local_temperature"):
+            local_temp = env.get_local_temperature(self.x, self.y)
+        else:
+            local_temp = getattr(env, "temperature", 20.0)
+
+        if local_temp < self.comfort_temp_min:
+            temp_delta = self.comfort_temp_min - local_temp
+            thermo_cost = 0.008 * mass_ratio * temp_delta
+        elif local_temp > self.comfort_temp_max:
+            temp_delta = local_temp - self.comfort_temp_max
+            thermo_cost = 0.006 * mass_ratio * temp_delta
+        else:
+            thermo_cost = 0.0
+
+        self.energy -= (basal_burn + locomotion_cost + thermo_cost)
 
         # If out of energy, burn health instead (energy deficit)
         if self.energy < 0:
