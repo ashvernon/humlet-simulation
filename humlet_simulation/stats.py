@@ -17,6 +17,10 @@ class StatsSnapshot:
     tick: int
     population: int
 
+    # Reproduction state
+    pregnant_count: int
+    avg_gestation_progress: float
+
     # Core trait / physiology aggregates
     avg_speed: float
     avg_sense_range: float
@@ -97,6 +101,8 @@ class EvolutionStats:
             snapshot = StatsSnapshot(
                 tick=tick,
                 population=0,
+                pregnant_count=0,
+                avg_gestation_progress=0.0,
                 avg_speed=0.0,
                 avg_sense_range=0.0,
                 avg_aggression=0.0,
@@ -135,6 +141,22 @@ class EvolutionStats:
             )
         else:
             def avg(fn): return sum(fn(h) for h in alive) / n
+
+            # Reproduction state
+            pregnant_humlets = [h for h in alive if getattr(h, "pregnant", False)]
+            pregnant_count = len(pregnant_humlets)
+
+            def gestation_progress(h: Humlet) -> float:
+                if getattr(h, "gestation_period", 0) <= 0:
+                    return 0.0
+                remaining = getattr(h, "gestation_timer", 0)
+                period = getattr(h, "gestation_period", 1)
+                return max(0.0, min(1.0, 1.0 - (remaining / max(1, period))))
+
+            avg_gestation_progress = (
+                sum(gestation_progress(h) for h in pregnant_humlets) / pregnant_count
+                if pregnant_count > 0 else 0.0
+            )
 
             # Core traits
             avg_speed = avg(lambda h: h.speed_trait)
@@ -186,6 +208,8 @@ class EvolutionStats:
             snapshot = StatsSnapshot(
                 tick=tick,
                 population=n,
+                pregnant_count=pregnant_count,
+                avg_gestation_progress=avg_gestation_progress,
                 avg_speed=avg_speed,
                 avg_sense_range=avg_sense_range,
                 avg_aggression=avg_aggression,
