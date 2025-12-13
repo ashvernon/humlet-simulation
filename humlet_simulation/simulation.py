@@ -481,6 +481,7 @@ class Simulation:
 
         # HUD (top bar, over world area)
         pop = len(self.humlets)
+        food_count = sum(1 for obj in self.env.objects if isinstance(obj, Food))
         info = (
             f"Tick: {self.tick}   "
             f"Pop: {pop}   "
@@ -490,6 +491,19 @@ class Simulation:
         )
         text_surface = self.font_medium.render(info, True, (255, 255, 255))
         self.screen.blit(text_surface, (10, 10))
+
+        # Secondary HUD line with environment / ecology context
+        day_frac = (self.env.time % max(1, self.env.day_length)) / max(1, self.env.day_length)
+        season_frac = (self.env.time % max(1, self.env.season_length)) / max(1, self.env.season_length)
+        info2 = (
+            f"Day: {day_frac * 100:5.1f}%   "
+            f"Season: {season_frac * 100:5.1f}%   "
+            f"Light: {self.env.light_level:.2f}   "
+            f"Wild food: {food_count}/{self.env.food_capacity}   "
+            f"Food pool: {self.env.food_energy_pool:.0f}"
+        )
+        text_surface2 = self.font_small.render(info2, True, (220, 220, 220))
+        self.screen.blit(text_surface2, (10, 32))
 
         # inside your draw loop, after screen fill and before display.flip()
         if humlet is self.selected_humlet:
@@ -867,6 +881,17 @@ class Simulation:
             y2 = draw_line(f"Food / cap : {s.avg_food_per_capita:.2f}", x2, y2)
             y2 = draw_line(f"Wood / cap : {s.avg_wood_per_capita:.2f}", x2, y2)
             y2 = draw_line(f"Stone / cap: {s.avg_stone_per_capita:.2f}", x2, y2)
+
+            y2 += 4
+            y2 = draw_header("== Environment ==", x2, y2, (200, 230, 255))
+            y2 = draw_line(f"Day phase  : {s.day_progress * 100:5.1f}%", x2, y2)
+            y2 = draw_line(f"Season     : {s.season_progress * 100:5.1f}%", x2, y2)
+            y2 = draw_line(f"Light lvl  : {s.light_level:.2f}", x2, y2)
+            y2 = draw_line(
+                f"Wild food  : {s.wild_food_count}/{s.food_capacity}", x2, y2
+            )
+            y2 = draw_line(f"Food pool  : {s.food_energy_pool:.0f}", x2, y2)
+            y2 = draw_line(f"Product/tk : {s.productivity_per_tick:.1f}", x2, y2)
 
 
 
