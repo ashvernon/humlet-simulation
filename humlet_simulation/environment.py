@@ -116,10 +116,13 @@ class Environment:
         # Objects in world
         self.objects: List[WorldObject] = []
 
-        # Food dynamics
-        self.max_food = 400
+        # Food dynamics (biomass-conserving)
         self.food_respawn_interval = 40
         self._last_food_spawn = 0
+        self.base_food_nutrition = 40.0
+        self.food_energy_pool = 0.0
+        self.food_capacity = 0
+        self._productivity_per_tick = 0.0
 
         # ---------------------------------------------------------- #
         # Biome grid setup (Earth-like latitude + noise)
@@ -132,6 +135,9 @@ class Environment:
 
         self.regions: list[list[Region]] = []
         self._generate_regions()
+
+        # Food carrying capacity and productivity depend on the land surface
+        self._initialise_food_budget()
 
         # --- Static resource nodes, now biome-aware ---
         self._spawn_initial_resources()
@@ -334,6 +340,29 @@ class Environment:
             self.tile_w = self.width / self.cols
             self.tile_h = self.height / self.rows
 
+    def _initialise_food_budget(self) -> None:
+        """Derive food capacity & productivity from land fertility."""
+
+        if not self.regions:
+            # Fallback: keep a modest default
+            self.food_capacity = 200
+            self._productivity_per_tick = self.base_food_nutrition * 0.1
+            self.food_energy_pool = self.food_capacity * self.base_food_nutrition * 0.25
+            return
+
+        land_tiles = [reg for row in self.regions for reg in row if not reg.water]
+        total_fertility = sum(reg.fertility for reg in land_tiles)
+        avg_fertility = total_fertility / max(1, len(land_tiles))
+
+        # Capacity grows with fertile land area; keep within reasonable bounds
+        self.food_capacity = max(80, int(total_fertility * 2.5))
+
+        # Productivity scales with average fertility; tuned to roughly match previous pacing
+        self._productivity_per_tick = self.base_food_nutrition * (0.12 * avg_fertility + 0.05)
+
+        # Start with some biomass reserve but not a full map of food
+        self.food_energy_pool = self.food_capacity * self.base_food_nutrition * 0.3
+
     # ------------------------------------------------------------------ #
     # Region queries
     # ------------------------------------------------------------------ #
@@ -479,9 +508,25 @@ class Environment:
             min(1.0, self.air_quality + random.uniform(-0.005, 0.005)),
         )
 
-        # Food respawn
+        # Biomass accumulation (sunlight/rain -> plants)
+        capacity_energy = self.food_capacity * self.base_food_nutrition
+        self.food_energy_pool = min(
+            capacity_energy, self.food_energy_pool + self._productivity_per_tick
+        )
+
+        # Food respawn draws from the energy pool and stops near carrying capacity
         if self.time - self._last_food_spawn >= self.food_respawn_interval:
             food_count = sum(1 for o in self.objects if isinstance(o, Food))
-            if food_count < self.max_food:
-                self._spawn_random_food(count=8)
+            spawn_space = max(0, self.food_capacity - food_count)
+
+            if spawn_space > 0:
+                # Prefer to grow proportionally to free space and available biomass
+                max_from_pool = int(self.food_energy_pool // self.base_food_nutrition)
+                logistic_limit = max(1, int(spawn_space * 0.6))
+                spawn_count = min(max_from_pool, logistic_limit)
+
+                if spawn_count > 0:
+                    self._spawn_random_food(count=spawn_count)
+                    self.food_energy_pool -= spawn_count * self.base_food_nutrition
+
             self._last_food_spawn = self.time
