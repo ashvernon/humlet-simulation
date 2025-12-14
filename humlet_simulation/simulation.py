@@ -1113,6 +1113,8 @@ class Simulation:
         y_hid = layer_positions(n_hid)
         y_out = layer_positions(n_out)
 
+        inactive_threshold = 0.08
+
         def weight_color(w: float) -> tuple[int, int, int]:
             mag = min(1.0, abs(w) / 2.0)
             c = int(80 + 175 * mag)
@@ -1124,12 +1126,33 @@ class Simulation:
 
         def node_color(a: float) -> tuple[int, int, int]:
             a = max(-1.0, min(1.0, float(a)))
+            mag = abs(a)
+            if mag < inactive_threshold:
+                base = int(90 + 80 * (mag / max(inactive_threshold, 1e-6)))
+                return (base, base, base)
             if a >= 0:
-                g = int(130 + 120 * a)
+                g = int(130 + 120 * mag)
                 return (60, g, 60)
             else:
-                r = int(130 + 120 * (-a))
+                r = int(130 + 120 * mag)
                 return (r, 60, 60)
+
+        def draw_inactive_marker(x: int, y: int, active_value: float) -> None:
+            if abs(active_value) >= inactive_threshold:
+                # subtle glow for active nodes
+                halo = min(60, int(abs(active_value) * 90))
+                pygame.draw.circle(
+                    self.screen,
+                    (180 + halo // 2, 180 + halo // 2, 200),
+                    (x, y),
+                    radius + 3,
+                    1,
+                )
+                return
+
+            pygame.draw.circle(self.screen, (130, 130, 150), (x, y), radius + 3, 2)
+            pygame.draw.line(self.screen, (160, 160, 180), (x - 6, y - 6), (x + 6, y + 6), 1)
+            pygame.draw.line(self.screen, (160, 160, 180), (x - 6, y + 6), (x + 6, y - 6), 1)
 
         radius = 8
 
@@ -1162,6 +1185,7 @@ class Simulation:
             col = node_color(inputs[i])
             pygame.draw.circle(self.screen, col, (x_in, y), radius)
             pygame.draw.circle(self.screen, (230, 230, 230), (x_in, y), radius, 1)
+            draw_inactive_marker(x_in, y, inputs[i])
 
             # label to the left
             label_text = input_labels[i]
@@ -1169,21 +1193,30 @@ class Simulation:
             label_x = x_in - 10 - label_surf.get_width()
             self.screen.blit(label_surf, (label_x, y - 7))
 
+            # value to the right for quick inspection
+            val_surf = self.font_small.render(f"{inputs[i]:+.2f}", True, (180, 210, 255))
+            self.screen.blit(val_surf, (x_in + 14, y - 7))
+
         # Hidden nodes (just circles for now, no labels to keep it clean)
         for j, y in enumerate(y_hid):
             col = node_color(hidden[j])
             pygame.draw.circle(self.screen, col, (x_hid, y), radius)
             pygame.draw.circle(self.screen, (230, 230, 230), (x_hid, y), radius, 1)
+            draw_inactive_marker(x_hid, y, hidden[j])
 
         # Output nodes + labels
         for k, y in enumerate(y_out):
             col = node_color(outputs[k])
             pygame.draw.circle(self.screen, col, (x_out, y), radius)
             pygame.draw.circle(self.screen, (230, 230, 230), (x_out, y), radius, 1)
+            draw_inactive_marker(x_out, y, outputs[k])
 
             lab = f"{k}: {output_labels[k]}"
             lab_surf = self.font_small.render(lab, True, (230, 230, 230))
             self.screen.blit(lab_surf, (x_out + 15, y - 7))
+
+            val_surf = self.font_small.render(f"{outputs[k]:+.2f}", True, (255, 230, 190))
+            self.screen.blit(val_surf, (x_out - 45, y - 7))
 
 
     def _draw_brain_text_info(
@@ -1229,6 +1262,19 @@ class Simulation:
         import numpy as np
 
         y += line_h // 2
+        draw(
+            "Dormant nodes (<0.05 mag)",
+            (200, 210, 255),
+        )
+        hidden = getattr(h, "last_hidden", np.zeros(len(W1)))
+        draw(
+            f"in:{int(np.sum(np.abs(inputs) < 0.05))}/{len(inputs)}  "
+            f"hid:{int(np.sum(np.abs(hidden) < 0.05))}/{len(hidden)}  "
+            f"out:{int(np.sum(np.abs(outputs) < 0.05))}/{len(outputs)}",
+            (190, 200, 230),
+        )
+
+        y += line_h // 2
         draw("W1 stats", (200, 255, 200))
         draw(f"min: {float(np.min(W1)):+.3f}")
         draw(f"max: {float(np.max(W1)):+.3f}")
@@ -1239,6 +1285,10 @@ class Simulation:
         draw(f"min: {float(np.min(W2)):+.3f}")
         draw(f"max: {float(np.max(W2)):+.3f}")
         draw(f"mean: {float(np.mean(W2)):+.3f}")
+
+        y += line_h // 2
+        draw(f"Last reward: {h.last_brain_reward:+.3f}", (255, 205, 180))
+        draw(f"Fitness score: {h.brain_fitness:+.3f}", (255, 205, 180))
 
         y += line_h // 2
         draw("Hint: B = toggle overlay", (180, 200, 255))
@@ -1295,6 +1345,8 @@ class Simulation:
         y_out = layer_positions(n_out)
 
         # Color helpers
+        inactive_threshold = 0.08
+
         def weight_color(w: float) -> tuple[int, int, int]:
             mag = min(1.0, abs(w) / 2.0)
             c = int(80 + 175 * mag)
@@ -1310,12 +1362,25 @@ class Simulation:
         def node_color(a: float) -> tuple[int, int, int]:
             # a is typically in [-1, 1]
             a = max(-1.0, min(1.0, float(a)))
+            mag = abs(a)
+            if mag < inactive_threshold:
+                base = int(80 + 90 * (mag / max(1e-6, inactive_threshold)))
+                return (base, base, base)
             if a >= 0:
-                g = int(120 + 120 * a)
+                g = int(120 + 120 * mag)
                 return (50, g, 50)
             else:
-                r = int(120 + 120 * (-a))
+                r = int(120 + 120 * mag)
                 return (r, 50, 50)
+
+        def draw_inactive_marker(x: int, y: int, active_value: float) -> None:
+            if abs(active_value) < inactive_threshold:
+                pygame.draw.circle(self.screen, (110, 110, 130), (x, y), radius + 2, 1)
+                pygame.draw.line(self.screen, (130, 130, 150), (x - 4, y - 4), (x + 4, y + 4), 1)
+                pygame.draw.line(self.screen, (130, 130, 150), (x - 4, y + 4), (x + 4, y - 4), 1)
+            else:
+                halo = min(50, int(abs(active_value) * 80))
+                pygame.draw.circle(self.screen, (180, 180, 200), (x, y), radius + 2, 1)
 
         radius = 5
 
@@ -1353,12 +1418,14 @@ class Simulation:
             col = node_color(inputs[i])
             pygame.draw.circle(self.screen, col, (x_in, y), radius)
             pygame.draw.circle(self.screen, (220, 220, 220), (x_in, y), radius, 1)
+            draw_inactive_marker(x_in, y, inputs[i])
 
         # Hidden nodes
         for j, y in enumerate(y_hid):
             col = node_color(hidden[j])
             pygame.draw.circle(self.screen, col, (x_hid, y), radius)
             pygame.draw.circle(self.screen, (220, 220, 220), (x_hid, y), radius, 1)
+            draw_inactive_marker(x_hid, y, hidden[j])
 
         # Output nodes + small labels
         output_labels = ["Mx", "My", "Eat", "Repr"]
@@ -1366,6 +1433,7 @@ class Simulation:
             col = node_color(outputs[k])
             pygame.draw.circle(self.screen, col, (x_out, y), radius)
             pygame.draw.circle(self.screen, (220, 220, 220), (x_out, y), radius, 1)
+            draw_inactive_marker(x_out, y, outputs[k])
 
             if k < len(output_labels):
                 lab = self.font_small.render(output_labels[k], True, (230, 230, 230))
