@@ -50,8 +50,8 @@ class Humlet:
     #  12: curiosity_drive
     N_INPUTS = 13
     N_HIDDEN = 8
-    # Outputs: [move_x, move_y, eat, reproduce]
-    N_OUTPUTS = 4
+    # Outputs: [move_x, move_y, eat, reproduce, rest_intensity]
+    N_OUTPUTS = 5
 
     def __init__(
         self,
@@ -218,6 +218,9 @@ class Humlet:
         self.last_inputs = np.zeros(self.N_INPUTS, dtype=float)
         self.last_hidden = np.zeros(self.N_HIDDEN, dtype=float)
         self.last_outputs = np.zeros(self.N_OUTPUTS, dtype=float)
+
+        # Rest state (0–1) derived from brain output
+        self.rest_intensity: float = 0.0
 
         # ---------------------------
         # Brain (simple 1-hidden-layer NN)
@@ -580,9 +583,10 @@ class Humlet:
 
         eat = safe_sigmoid(o_raw[2])
         reproduce = safe_sigmoid(o_raw[3])
+        rest = safe_sigmoid(o_raw[4])
 
         # Final output vector
-        out = np.array([move_x, move_y, eat, reproduce], dtype=float)
+        out = np.array([move_x, move_y, eat, reproduce, rest], dtype=float)
 
         # Store for brain diagram
         self.last_outputs = out
@@ -1320,7 +1324,10 @@ class Humlet:
         ], dtype=float)
 
         # 4. Brain decides actions
-        move_x, move_y, eat_signal, repro_signal = self._brain_forward(inputs)
+        move_x, move_y, eat_signal, repro_signal, rest_signal = self._brain_forward(inputs)
+
+        # Persist rest state for downstream metabolism/regen effects
+        self.rest_intensity = rest_signal
 
         # 4a. Curiosity-driven exploration noise
         if self.curiosity_drive > 0.0:
@@ -1332,7 +1339,13 @@ class Humlet:
             move_x = (1.0 - alpha) * move_x + alpha * rx
             move_y = (1.0 - alpha) * move_y + alpha * ry
 
-        # 4b. Home-range pull: don't wander *too* far from birthplace
+        # 4b. Rest dampens voluntary movement ("sleep" behaviour)
+        if rest_signal > 0.0:
+            rest_damper = 1.0 - 0.75 * rest_signal
+            move_x *= rest_damper
+            move_y *= rest_damper
+
+        # 4c. Home-range pull: don't wander *too* far from birthplace
         home_dx, home_dy = self._wrapped_delta(env, self.home_x, self.home_y)
         home_dist = math.hypot(home_dx, home_dy)
         if home_dist > self.effective_sense_range * 0.8:
@@ -1361,6 +1374,8 @@ class Humlet:
         if self.pregnant:
             preg_progress = 1.0 - (self.gestation_timer / max(1, self.gestation_period))
             speed *= max(0.45, 0.9 - 0.3 * preg_progress)
+        if rest_signal > 0.0:
+            speed *= 0.35 + 0.65 * (1.0 - rest_signal)
         self.vx = move_x * speed
         self.vy = move_y * speed
 
@@ -1541,18 +1556,22 @@ class Humlet:
     def _apply_metabolism_and_damage(self, env: Environment):
         """Apply energy drain, social energy adjust, esteem tweak, and environmental health impacts."""
         # ---------------- Basal + movement energy cost ----------------
+        rest = max(0.0, min(1.0, float(getattr(self, "rest_intensity", 0.0))))
+
         mass = max(1.0, self.mass)
         mass_ratio = mass / 70.0  # relative to ~average adult
 
         # Kleiber-like basal metabolic scaling that ties drain to body size
         metabolic_intensity = 0.7 + 10.0 * max(0.0, self.metabolism_rate - 0.02)
         basal_burn = 0.12 * (mass_ratio ** 0.75) * metabolic_intensity
+        basal_burn *= 1.0 - 0.45 * rest  # resting slows basal drain
 
         # Movement cost scales with kinetic effort, speed trait, and air density
         speed_mag = math.hypot(self.vx, self.vy)
         locomotion_cost = 0.04 * mass_ratio * (speed_mag ** 2)
         locomotion_cost *= (0.9 + 0.15 * self.speed_trait)
         locomotion_cost *= (0.8 + 0.4 * getattr(env, "air_density", 1.0))
+        locomotion_cost *= 1.0 - 0.25 * rest
 
         # Thermoregulation: energy cost grows with deviation from comfort band
         if hasattr(env, "get_local_temperature"):
@@ -1657,6 +1676,9 @@ class Humlet:
             speed2 = self.vx * self.vx + self.vy * self.vy
             if speed2 < 0.05:
                 regen += 0.02
+
+            if rest > 0.2 and speed2 < 0.1:
+                regen += 0.01 * rest
 
             # Scale with how topped-up their energy is
             energy_frac = self.energy / max(1e-6, self.max_energy)
