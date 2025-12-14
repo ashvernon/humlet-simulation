@@ -913,6 +913,9 @@ class Simulation:
             # Energy & Health bars
             energy_frac = h.energy / max(1e-6, h.max_energy)
             health_frac = h.health / max(1e-6, h.max_health)
+            stomach_frac = 0.0
+            if getattr(h, "stomach_capacity", 0.0) > 0:
+                stomach_frac = getattr(h, "stomach_content", 0.0) / getattr(h, "stomach_capacity", 1.0)
 
             y = draw_bar(
                 "Energy",
@@ -927,6 +930,18 @@ class Simulation:
                 x,
                 y,
                 (80, 220, 80) if health_frac > 0.3 else (220, 120, 80),
+            )
+            y = draw_bar(
+                "Stomach",
+                stomach_frac,
+                x,
+                y,
+                (200, 200, 120) if stomach_frac < 0.8 else (120, 200, 200),
+            )
+            y = draw_line(
+                f"Digest flow: {getattr(h, 'digestion_flow', 0.0):.2f}/tk",
+                x,
+                y,
             )
             y += 2
 
@@ -1026,6 +1041,8 @@ class Simulation:
             y2 += 4
             y2 = draw_line(f"Avg Energy : {s.avg_energy:.1f}", x2, y2)
             y2 = draw_line(f"Avg Health : {s.avg_health:.1f}", x2, y2)
+            y2 = draw_line(f"Avg Stomach: {s.avg_stomach_fill * 100:.1f}%", x2, y2)
+            y2 = draw_line(f"Avg Digest.: {s.avg_digestion_flow:.2f}/tk", x2, y2)
             y2 += 4
 
             y2 = draw_header("== Body & Space ==", x2, y2, (200, 230, 255))

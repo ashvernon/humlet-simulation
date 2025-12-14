@@ -146,6 +146,14 @@ class Humlet:
         self.max_energy = 100.0
         self.energy = self.rng.uniform(60.0, 90.0)
 
+        # Digestion system
+        self.stomach_capacity = 40.0
+        self.stomach_content = 0.0
+        self.digestion_rate = 1.0
+        self.absorption_efficiency = 0.85
+        self.digestion_flow = 0.0
+        self.waste = 0.0
+
         self.max_health = 100.0
         self.health = self.max_health
 
@@ -330,6 +338,13 @@ class Humlet:
         size_factor = (self.mass / self.base_mass) ** 0.1  # still weak scaling
         self.max_energy = 100.0 * size_factor
         self.max_health = 100.0 * size_factor
+
+        # Stomach capacity and digestion rate scale with body size/metabolism
+        mass_ratio = max(0.2, self.mass / 70.0)
+        self.stomach_capacity = max(10.0, 30.0 * mass_ratio * self.frame_factor)
+        base_rate = 0.05 + 0.35 * self.metabolism_rate
+        self.digestion_rate = max(0.2, base_rate * (0.8 + 0.6 * mass_ratio))
+        self.stomach_content = min(self.stomach_content, self.stomach_capacity)
 
         # Clamp current state to new maxima
         self.energy = min(self.energy, self.max_energy)
@@ -759,7 +774,16 @@ class Humlet:
         # ------------------------
         # Hunger (0 = full, 1 = starving)
         # ------------------------
-        self.hunger_need = 1.0 - (self.energy / self.max_energy)
+        energy_hunger = 1.0 - (self.energy / self.max_energy)
+        energy_hunger = max(0.0, min(1.0, energy_hunger))
+
+        if self.stomach_capacity > 0:
+            stomach_satiety = self.stomach_content / self.stomach_capacity
+        else:
+            stomach_satiety = 0.0
+
+        stomach_satiety = max(0.0, min(1.0, stomach_satiety))
+        self.hunger_need = 0.6 * energy_hunger + 0.4 * (1.0 - stomach_satiety)
         self.hunger_need = max(0.0, min(1.0, self.hunger_need))
 
         # ------------------------
@@ -1374,6 +1398,9 @@ class Humlet:
         self._gather_resources(env)
         self._deposit_resources(env)
 
+        # 5. Digestion turns stored food into usable energy
+        self._digest()
+
         # 6. Metabolic cost & environmental damage (and social + esteem effects)
         self._apply_metabolism_and_damage(env)
 
@@ -1480,9 +1507,36 @@ class Humlet:
         for obj in list(env.query_objects_near(self.x, self.y, eat_radius2 ** 0.5, classes=(Food,))):
             dx, dy = self._wrapped_delta(env, obj.x, obj.y)
             if dx * dx + dy * dy <= eat_radius2:
-                self.energy = min(self.max_energy, self.energy + obj.nutrition)
-                env.remove_object(obj)
+                space = max(0.0, self.stomach_capacity - self.stomach_content)
+                if space <= 1e-3:
+                    continue
+
+                bite_cap = max(2.0, 0.15 * self.stomach_capacity)
+                bite = min(space, obj.nutrition, bite_cap)
+                if bite <= 0:
+                    continue
+
+                self.stomach_content += bite
+                obj.nutrition -= bite
+                if obj.nutrition <= 0.1:
+                    env.remove_object(obj)
                 break
+
+    def _digest(self):
+        """Convert stomach contents into usable energy over time."""
+
+        self.digestion_flow = 0.0
+        if self.stomach_content <= 0.0:
+            return
+
+        digest_amount = min(self.stomach_content, self.digestion_rate)
+        energy_gain = digest_amount * self.absorption_efficiency
+
+        self.stomach_content -= digest_amount
+        self.energy = min(self.max_energy, self.energy + energy_gain)
+
+        self.digestion_flow = energy_gain
+        self.waste += max(0.0, digest_amount - energy_gain)
 
     def _apply_metabolism_and_damage(self, env: Environment):
         """Apply energy drain, social energy adjust, esteem tweak, and environmental health impacts."""
