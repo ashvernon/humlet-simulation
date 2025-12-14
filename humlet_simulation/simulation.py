@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import random
+from datetime import datetime
+
 import pygame
 import numpy as np
 
@@ -10,6 +12,8 @@ from .humlet import Humlet
 from .spatial_hash import SpatialHash
 from .stats import EvolutionStats, RegionTraitStats
 from .sensors.vision import Vision
+from .telemetry import DeathEvent, TelemetryRecorder
+from .reporting import generate_report
 
 class Simulation:
     """Main class to set up and run the Humlet life simulation."""
@@ -41,6 +45,14 @@ class Simulation:
         self.seed_rng = random.Random(self.base_seed)
         self.agent_seeds: dict[int, int] = {}
         self.trajectory_log_path = trajectory_log_path
+        self.run_id = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        self.telemetry = TelemetryRecorder(
+            self.run_id,
+            base_seed=self.base_seed,
+            world_size=(self.world_width, self.world_height),
+        )
+        self.births_since_last_snapshot = 0
+        self.deaths_since_last_snapshot = 0
 
         # World (simulation space)
         self.env = Environment(self.world_width, self.world_height)
@@ -393,6 +405,9 @@ class Simulation:
                         # Toggle big brain overlay
                         self.show_brain_overlay = not self.show_brain_overlay
                     elif event.key == pygame.K_r:
+                        # On-demand report dump
+                        self._write_report()
+                    elif event.key == pygame.K_v:
                         # Toggle framerate display
                         self.show_framerate = not self.show_framerate
 
@@ -417,6 +432,7 @@ class Simulation:
             else:
                 self.clock.tick(240)
 
+        self._write_report()
         pygame.quit()
 
     # ------------------------------------------------------------------ #
@@ -454,15 +470,46 @@ class Simulation:
         self._update_population_capacity()
 
         newborns: list[Humlet] = []
+        death_events: list[Humlet] = []
 
         # Update all humlets
         for h in self.humlets:
+            was_alive = h.alive
             h.update(
                 self.env,
                 self.humlets,
                 newborns,
                 max_population=self.max_population,
                 spatial_index=self.humlet_index,
+            )
+            if was_alive and not h.alive:
+                death_events.append(h)
+
+        if death_events:
+            self.deaths_since_last_snapshot += len(death_events)
+            self.telemetry.log_deaths(
+                [
+                    DeathEvent(
+                        tick=self.tick,
+                        humlet_id=d.id,
+                        family_id=d.family_id,
+                        generation=d.generation,
+                        age=d.age,
+                        x=d.x,
+                        y=d.y,
+                        region_col=(d.death_info or {}).get("region_col"),
+                        region_row=(d.death_info or {}).get("region_row"),
+                        energy=d.energy,
+                        health=d.health,
+                        hunger_need=(d.death_info or {}).get("hunger_need", d.hunger_need),
+                        safety_need=(d.death_info or {}).get("safety_need", d.safety_need),
+                        social_need=(d.death_info or {}).get("social_need", getattr(d, "social_need", 0.0)),
+                        cause=(d.death_info or {}).get("cause", "other"),
+                        last_action=(d.death_info or {}).get("last_action"),
+                        brain_outputs=(d.death_info or {}).get("brain_outputs"),
+                    )
+                    for d in death_events
+                ]
             )
 
         # Remove dead humlets
@@ -472,9 +519,12 @@ class Simulation:
         self.humlets.extend(newborns)
         for h in newborns:
             self.agent_seeds[h.id] = getattr(h, "seed", None)
+        if newborns:
+            self.births_since_last_snapshot += len(newborns)
 
         # Update evolution / population statistics
         self.stats.update(self.tick, self.humlets, self.env)
+        self._record_snapshot_if_needed()
 
         # Persist evolutionary trajectory if requested
         if self.trajectory_log_path is not None:
@@ -504,6 +554,43 @@ class Simulation:
         for h in self.humlets:
             if h.alive:
                 self.humlet_index.insert(h, h.x, h.y)
+
+    def _record_snapshot_if_needed(self) -> None:
+        if self.telemetry is None:
+            return
+
+        if self.tick % self.telemetry.snapshot_interval != 0:
+            return
+
+        self.telemetry.record_snapshot(
+            tick=self.tick,
+            humlets=self.humlets,
+            env=self.env,
+            births=self.births_since_last_snapshot,
+            deaths=self.deaths_since_last_snapshot,
+        )
+
+        self.births_since_last_snapshot = 0
+        self.deaths_since_last_snapshot = 0
+
+    def _finalize_telemetry(self) -> None:
+        if self.telemetry is None:
+            return
+        # Always store a final snapshot so the report has an end state
+        self.telemetry.record_snapshot(
+            tick=self.tick,
+            humlets=self.humlets,
+            env=self.env,
+            births=self.births_since_last_snapshot,
+            deaths=self.deaths_since_last_snapshot,
+        )
+        self.births_since_last_snapshot = 0
+        self.deaths_since_last_snapshot = 0
+
+    def _write_report(self) -> None:
+        self._finalize_telemetry()
+        report_path = generate_report(self.telemetry.db_path, self.telemetry.run_dir)
+        print(f"Report generated: {report_path}")
 
     # ------------------------------------------------------------------ #
     # Drawing
@@ -605,10 +692,14 @@ class Simulation:
         text_surface2 = self.font_small.render(info2, True, (220, 220, 220))
         self.screen.blit(text_surface2, (10, 32))
 
+        recording_info = f"Recording: ON   Run ID: {self.run_id}"
+        recording_surface = self.font_small.render(recording_info, True, (180, 240, 180))
+        self.screen.blit(recording_surface, (10, 50))
+
         if self.show_framerate:
             fps = self.clock.get_fps()
-            fps_text = self.font_small.render(f"FPS: {fps:5.1f} (R)", True, (200, 255, 200))
-            self.screen.blit(fps_text, (10, 50))
+            fps_text = self.font_small.render(f"FPS: {fps:5.1f} (V)", True, (200, 255, 200))
+            self.screen.blit(fps_text, (10, 68))
 
 
         # ----------------- INSPECTOR PANEL (right side) ----------------- #
