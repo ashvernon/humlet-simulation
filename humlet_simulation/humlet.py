@@ -143,18 +143,18 @@ class Humlet:
         # ---------------------------
         # Physiology
         # ---------------------------
-        self.max_energy = 100.0
-        self.energy = self.rng.uniform(60.0, 90.0)
+        self.max_energy = 3000.0
+        self.energy = self.rng.uniform(180.0, 2500.0)
 
         # Digestion system
-        self.stomach_capacity = 40.0
-        self.stomach_content = 0.0
+        self.stomach_capacity = 80.0
+        self.stomach_content = 40.0
         self.digestion_rate = 1.0
         self.absorption_efficiency = 0.85
         self.digestion_flow = 0.0
         self.waste = 0.0
 
-        self.max_health = 100.0
+        self.max_health = 200.0
         self.health = self.max_health
 
         self.age = 0
@@ -182,7 +182,7 @@ class Humlet:
                 "curiosity_trait": self.rng.uniform(0.0, 1.0),     # baseline tendency to explore
 
                 # ---- NEW: physical traits ----
-                "base_mass": self.rng.uniform(50.0, 90.0),         # kg at adulthood
+                "base_mass": self.rng.uniform(5.0, 9.0),         # kg at adulthood
                 "base_height": self.rng.uniform(1.4, 2.0),         # metres at adulthood
                 "frame_factor": self.rng.uniform(0.8, 1.2),        # stocky vs slender
             }
@@ -242,7 +242,7 @@ class Humlet:
         # Reproduction control
         # ---------------------------
         self.repro_cooldown = 0
-        self.repro_min_energy = 40.0
+        self.repro_min_energy = 30.0
         self.pregnant: bool = False
         self.gestation_timer: int = 0
         self.gestation_period: int = 0
@@ -270,9 +270,9 @@ class Humlet:
     def _life_stage(self) -> str:
         """Coarse life stage based on age vs lifespan."""
         ratio = self.age / max(1, self.lifespan)
-        if ratio < 0.25:
+        if ratio < 0.15:
             return "child"
-        elif ratio < 0.75:
+        elif ratio < 0.85:
             return "adult"
         else:
             return "elder"
@@ -1115,7 +1115,7 @@ class Humlet:
     def _gestation_ticks(self) -> int:
         """Derive a gestation length tied to lifespan to slow explosive cloning."""
         base = int(self.lifespan * 0.08)
-        return max(400, min(1600, base))
+        return max(400, min(1000, base))
 
     def _give_birth(self, env: Environment, newborns: list["Humlet"]):
         """Finish gestation and spawn the stored embryo."""
@@ -1228,7 +1228,7 @@ class Humlet:
 
         # Pay reproduction cost up front and lock parent into gestation
         gestation_period = self._gestation_ticks()
-        upfront_cost = self.energy * 0.45  # heavier investment than before
+        upfront_cost = self.energy * 0.25  # heavier investment than before
         self.energy -= upfront_cost
         self.repro_cooldown = gestation_period + 400  # postpartum rest baked in
 
@@ -1353,7 +1353,7 @@ class Humlet:
         # 5. Interpret brain outputs
 
         # movement
-        speed = 0.75 * self.speed_trait * self.movement_scalar
+        speed = 1.75 * self.speed_trait * self.movement_scalar
         local_env = self._sample_local_env(env)
         speed *= 1.0 - 0.35 * local_env.get("roughness", 0.0)
         if local_env.get("water", 0.0) > 0.5:
