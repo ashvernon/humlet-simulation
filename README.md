@@ -10,6 +10,7 @@ An agent-based artificial life experiment where *humlets* forage, interact, and 
 ### Environment
 - Continuous 2D world discretized into a coarse grid of *regions* that encode biome, fertility, humidity, roughness, and temperature offsets. Each region influences background rendering, resource clustering, and local carrying capacity.
 - Diurnal and seasonal cycles modulate `light_level`, `temperature`, and food respawn, forcing agents to cope with fluctuating energy budgets.
+- A central village hub aggregates communal stores of food, wood, and stone; totals and per-capita reserves are shown in the right-hand inspector panel.
 - Static resources (trees and stone deposits) spawn biome-aware clusters, while consumable food is replenished stochastically with an upper bound (`max_food`).
 
 ### Agents (humlets)
@@ -27,10 +28,10 @@ An agent-based artificial life experiment where *humlets* forage, interact, and 
 
 ### Prerequisites
 - Python 3.10+
-- Dependencies: `pygame` for rendering and `numpy` for neural math. Install with:
+- Dependencies: `pygame` for rendering, `numpy` for neural math, and `matplotlib` for the HTML/PNG telemetry reports. Install with:
 
 ```bash
-pip install pygame numpy
+pip install pygame numpy matplotlib
 ```
 
 ### Start the simulator
@@ -47,9 +48,16 @@ Defaults create a 1200×1000 world with 100 humlets. Adjust `world_width`, `worl
 - **Left click**: select the nearest humlet in the world pane.
 - **B**: toggle the large brain overlay for the selected individual.
 - **H**: cycle trait heatmaps (`met`, `spd`, `sns`, `soc`, `agg`, or none).
+- **R**: write an on-demand telemetry report (HTML + charts) to the current run folder.
 - **P**: pause/resume simulation updates.
 - **F**: fast-forward (multiple simulation steps per frame).
+- **V**: toggle framerate display (helpful when profiling with fast mode).
 - **Esc** or **Q**: close the brain overlay, then quit.
+
+### Telemetry and reports
+- Every run writes a SQLite telemetry database plus summary artifacts under `reports/run_<timestamp>`. Snapshot rows capture population totals, trait averages, carrying capacity, and food/stone/tree counts; death events log causes, ages, and vital signs at demise.
+- Press **R** at any time (or simply quit the window) to finalize a run and generate `summary.html` alongside PNG charts for population, death causes, and age-at-death histograms.
+- The top HUD shows the active run ID and whether recording is on; inspector panels expose both individual and aggregate village stores to contextualize the rendered world.
 
 ## File map
 - `main.py`: entrypoint that configures a `Simulation` instance and starts the loop.
