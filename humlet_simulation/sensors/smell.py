@@ -37,11 +37,6 @@ class Smell:
             if dist <= 1e-6 or dist > self.range:
                 continue
 
-            # Block scent if a solid object occludes the shortest path
-            if hasattr(self.owner, "_has_line_of_sight"):
-                if not self.owner._has_line_of_sight(environment, obj.x, obj.y, target=obj, target_radius=getattr(obj, "radius", 0.0)):
-                    continue
-
             # Stronger weight for closer food
             strength = (self.range - dist) / self.range
             fx += dx * strength * self.sensitivity
