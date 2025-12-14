@@ -106,6 +106,7 @@ class Simulation:
         # Pause & speed
         self.paused = False
         self.fast_mode = False
+        self.show_framerate = False
 
         # Selected humlet for inspection
         self.selected_humlet: Humlet | None = None
@@ -386,6 +387,9 @@ class Simulation:
                     elif event.key == pygame.K_b:
                         # Toggle big brain overlay
                         self.show_brain_overlay = not self.show_brain_overlay
+                    elif event.key == pygame.K_r:
+                        # Toggle framerate display
+                        self.show_framerate = not self.show_framerate
 
                 elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                     mx, my = event.pos
@@ -588,6 +592,11 @@ class Simulation:
         )
         text_surface2 = self.font_small.render(info2, True, (220, 220, 220))
         self.screen.blit(text_surface2, (10, 32))
+
+        if self.show_framerate:
+            fps = self.clock.get_fps()
+            fps_text = self.font_small.render(f"FPS: {fps:5.1f} (R)", True, (200, 255, 200))
+            self.screen.blit(fps_text, (10, 50))
 
 
         # ----------------- INSPECTOR PANEL (right side) ----------------- #
