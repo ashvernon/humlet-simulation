@@ -250,7 +250,7 @@ class TelemetryRecorder:
                 avg_stomach_fill, avg_digestion_flow, avg_absorption_efficiency,
                 avg_speed, avg_metabolism, avg_sense_range, avg_aggression, avg_sociability, avg_curiosity,
                 food_count, stone_count, tree_count, population_grid, food_grid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 tick,
