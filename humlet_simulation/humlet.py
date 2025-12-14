@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 import random
 from typing import List
@@ -150,6 +151,7 @@ class Humlet:
 
         self.age = 0
         self.alive = True
+        self.death_info: dict | None = None
 
         # Needs (0–1)
         self.hunger_need = 0.0
@@ -1387,10 +1389,16 @@ class Humlet:
 
         # 7. Death checks
         eps = 0.05  # same threshold used when clamping
-        if self.energy <= eps and self.health <= eps:
-            self.alive = False
+        cause = None
         if self.age > self.lifespan:
-            self.alive = False
+            cause = "old_age"
+        elif self.energy <= eps:
+            cause = "starvation"
+        elif self.health <= eps:
+            cause = self._determine_death_cause(env)
+
+        if cause is not None:
+            self._mark_dead(cause, env)
 
     # ------------------------------------------------------------------ #
     # Resource gathering & depositing (Phase 1)
@@ -1614,6 +1622,45 @@ class Humlet:
         # don't wipe out legitimate small healing
         if self.health < 1e-4:
             self.health = 0.0
+
+    def _determine_death_cause(self, env: Environment | None) -> str:
+        if env is None:
+            return "other"
+
+        local_temp = env.get_local_temperature(self.x, self.y)
+        temp_extreme = (
+            local_temp > self.comfort_temp_max + 5 or local_temp < self.comfort_temp_min - 5
+        )
+        bad_air = getattr(env, "air_quality", 1.0) < 0.75
+
+        if temp_extreme or bad_air:
+            return "exposure"
+        return "injury"
+
+    def _mark_dead(self, cause: str, env: Environment | None) -> None:
+        if not self.alive and self.death_info is not None:
+            return
+
+        region = env.get_region_at(self.x, self.y) if env is not None else None
+
+        action = "Move"
+        if self.last_outputs[2] > 0.5:
+            action = "Eat"
+        elif self.last_outputs[3] > 0.5:
+            action = "Reproduce"
+
+        self.death_info = {
+            "cause": cause,
+            "region_col": getattr(region, "col", None),
+            "region_row": getattr(region, "row", None),
+            "hunger_need": self.hunger_need,
+            "safety_need": self.safety_need,
+            "social_need": self.social_need,
+            "last_action": action,
+            "brain_outputs": json.dumps(self.last_outputs.tolist()),
+        }
+
+        self.alive = False
 
     # ------------------------------------------------------------------ #
     # Visual helpers
