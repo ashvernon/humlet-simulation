@@ -31,6 +31,9 @@ class StatsSnapshot:
     avg_age: float
     avg_energy: float
     avg_health: float
+    avg_stomach_fill: float
+    avg_digestion_flow: float
+    avg_absorption_efficiency: float
 
     # New: physical body traits / growth
     avg_mass: float
@@ -145,6 +148,9 @@ class EvolutionStats:
                 avg_age=0.0,
                 avg_energy=0.0,
                 avg_health=0.0,
+                avg_stomach_fill=0.0,
+                avg_digestion_flow=0.0,
+                avg_absorption_efficiency=0.0,
                 # physical
                 avg_mass=0.0,
                 avg_height=0.0,
@@ -211,6 +217,16 @@ class EvolutionStats:
             avg_age = avg(lambda h: h.age)
             avg_energy = avg(lambda h: h.energy)
             avg_health = avg(lambda h: h.health)
+            avg_stomach_fill = avg(
+                lambda h: (
+                    getattr(h, "stomach_content", 0.0)
+                    / getattr(h, "stomach_capacity", 1.0)
+                    if getattr(h, "stomach_capacity", 0.0) > 0
+                    else 0.0
+                )
+            )
+            avg_digestion_flow = avg(lambda h: getattr(h, "digestion_flow", 0.0))
+            avg_absorption_efficiency = avg(lambda h: getattr(h, "absorption_efficiency", 0.0))
 
             # Physical body
             avg_mass = avg(lambda h: getattr(h, "mass", 0.0))
@@ -260,6 +276,9 @@ class EvolutionStats:
                 avg_age=avg_age,
                 avg_energy=avg_energy,
                 avg_health=avg_health,
+                avg_stomach_fill=avg_stomach_fill,
+                avg_digestion_flow=avg_digestion_flow,
+                avg_absorption_efficiency=avg_absorption_efficiency,
                 # physical
                 avg_mass=avg_mass,
                 avg_height=avg_height,

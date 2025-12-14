@@ -128,6 +128,9 @@ class TelemetryRecorder:
                 median_energy REAL,
                 avg_health REAL,
                 median_health REAL,
+                avg_stomach_fill REAL,
+                avg_digestion_flow REAL,
+                avg_absorption_efficiency REAL,
                 avg_speed REAL,
                 avg_metabolism REAL,
                 avg_sense_range REAL,
@@ -218,6 +221,18 @@ class TelemetryRecorder:
         avg_aggression = avg(h.aggression for h in alive)
         avg_sociability = avg(h.sociability for h in alive)
         avg_curiosity = avg(h.curiosity_trait for h in alive)
+        avg_stomach_fill = avg(
+            (
+                h.stomach_content / h.stomach_capacity
+                if getattr(h, "stomach_capacity", 0.0) > 0
+                else 0.0
+            )
+            for h in alive
+        )
+        avg_digestion_flow = avg(getattr(h, "digestion_flow", 0.0) for h in alive)
+        avg_absorption_efficiency = avg(
+            getattr(h, "absorption_efficiency", 0.0) for h in alive
+        )
 
         food_count = sum(1 for obj in env.objects if getattr(obj, "type", "") == "food")
         stone_count = sum(1 for obj in env.objects if getattr(obj, "type", "") == "stone")
@@ -232,9 +247,10 @@ class TelemetryRecorder:
             INSERT OR REPLACE INTO snapshots(
                 tick, population, births, deaths, avg_age, median_age, max_age,
                 avg_energy, median_energy, avg_health, median_health,
+                avg_stomach_fill, avg_digestion_flow, avg_absorption_efficiency,
                 avg_speed, avg_metabolism, avg_sense_range, avg_aggression, avg_sociability, avg_curiosity,
                 food_count, stone_count, tree_count, population_grid, food_grid
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 tick,
@@ -248,6 +264,9 @@ class TelemetryRecorder:
                 med_energy,
                 avg(healths),
                 med_health,
+                avg_stomach_fill,
+                avg_digestion_flow,
+                avg_absorption_efficiency,
                 avg_speed,
                 avg_metabolism,
                 avg_sense_range,
