@@ -62,6 +62,7 @@ class Simulation:
             group_id = i % group_count
             seed_value = self.seed_rng.randrange(2**32)
             humlet = Humlet(self.env, group_id=group_id, seed=seed_value)
+            humlet.set_to_reproductive_age()
             self.humlets.append(humlet)
             self.agent_seeds[humlet.id] = seed_value
 

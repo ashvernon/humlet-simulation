@@ -267,7 +267,7 @@ class Humlet:
         else:
             return "elder"
 
-    def _update_physical_growth(self) -> None:
+    def _update_physical_growth(self, *, force_to_age: bool = False) -> None:
         """
         Update mass & height as a function of age.
 
@@ -317,8 +317,12 @@ class Humlet:
         else:
             lerp = 0.07
 
-        self.mass += (target_mass - self.mass) * lerp
-        self.height += (target_height - self.height) * lerp
+        if force_to_age:
+            self.mass = target_mass
+            self.height = target_height
+        else:
+            self.mass += (target_mass - self.mass) * lerp
+            self.height += (target_height - self.height) * lerp
 
         # Tie physical scale into capacity
         size_factor = (self.mass / self.base_mass) ** 0.1  # still weak scaling
@@ -348,6 +352,17 @@ class Humlet:
         # Larger bodies need more reserves before reproducing
         size_factor = (self.mass / self.base_mass) ** 0.1
         self.repro_min_energy = 55.0 * size_factor
+
+    def set_to_reproductive_age(self) -> None:
+        """Start the humlet as an adult capable of reproducing."""
+
+        # Aim for early adulthood so the initial population can reproduce
+        # immediately without spawning elders.
+        self.age = max(1, int(self.lifespan * 0.3))
+
+        # Snap physical stats to match the chosen age so energy/health and
+        # movement scaling remain consistent with life stage.
+        self._update_physical_growth(force_to_age=True)
 
 
     # ------------------------------------------------------------------ #
