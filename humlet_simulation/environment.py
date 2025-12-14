@@ -379,7 +379,7 @@ class Environment:
         self,
         energy_need_per_tick: float,
         *,
-        area_per_humlet: float = 4000.0,
+        area_per_humlet: float = 3000.0,
     ) -> int:
         """Estimate how many humlets the landscape can sustain.
 
