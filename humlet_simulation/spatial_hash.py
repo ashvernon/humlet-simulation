@@ -27,6 +27,17 @@ class SpatialHash:
         """Insert an object at position (x, y)."""
         cell = self._get_cell(x, y)
         self.grid[cell].append(obj)
+
+    def remove(self, obj, x: float, y: float) -> None:
+        """Remove an object from the spatial hash if present."""
+        cell = self._get_cell(x, y)
+        if cell not in self.grid:
+            return
+        bucket = self.grid[cell]
+        if obj in bucket:
+            bucket.remove(obj)
+            if not bucket:
+                del self.grid[cell]
     
     def query_radius(self, x: float, y: float, radius: float) -> List:
         """
