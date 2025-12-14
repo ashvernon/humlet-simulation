@@ -1194,7 +1194,7 @@ class Simulation:
         else:
             input_labels = input_labels[:n_in]
 
-        output_labels = ["Move X", "Move Y", "Eat", "Reproduce"]
+        output_labels = ["Move X", "Move Y", "Eat", "Reproduce", "Rest"]
         if len(output_labels) < n_out:
             output_labels += [f"Out {k}" for k in range(len(output_labels), n_out)]
         else:
@@ -1359,7 +1359,7 @@ class Simulation:
 
         y += line_h // 2
         draw("Outputs", (255, 220, 160))
-        labels = ["Move X", "Move Y", "Eat", "Reproduce"]
+        labels = ["Move X", "Move Y", "Eat", "Reproduce", "Rest"]
         for k, val in enumerate(outputs):
             if y > rect.bottom - 3 * line_h:
                 break
@@ -1536,7 +1536,7 @@ class Simulation:
             draw_inactive_marker(x_hid, y, hidden[j])
 
         # Output nodes + small labels
-        output_labels = ["Mx", "My", "Eat", "Repr"]
+        output_labels = ["Mx", "My", "Eat", "Repr", "Rest"]
         for k, y in enumerate(y_out):
             col = node_color(outputs[k])
             pygame.draw.circle(self.screen, col, (x_out, y), radius)
