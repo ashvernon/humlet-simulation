@@ -539,16 +539,27 @@ class Simulation:
         # Draw selection highlight (safe even if humlet list is empty)
         if self.selected_humlet is not None and self.selected_humlet.alive:
             sh = self.selected_humlet
+            pos = (int(sh.x), int(sh.y))
+            radius = sh.render_radius()
+
             pygame.draw.circle(
                 self.screen, (255, 255, 0),
-                (int(sh.x), int(sh.y)),
-                sh.render_radius() + 4, 2
+                pos,
+                radius + 4, 2,
             )
             pygame.draw.circle(
                 self.screen, (255, 255, 0),
-                (int(sh.x), int(sh.y)),
-                int(sh.sense_range), 1
+                pos,
+                int(sh.sense_range), 1,
             )
+
+            # Optional debugging overlays
+            pygame.draw.circle(self.screen, (255, 255, 255), pos, int(sh.sense_range), 1)
+            pygame.draw.circle(self.screen, (255, 255, 255), pos, radius + 2, 1)
+
+            v = getattr(sh, "vision", None)
+            if v is not None:
+                v.draw(self.screen)
 
 
         # HUD (top bar, over world area)
@@ -576,19 +587,6 @@ class Simulation:
         )
         text_surface2 = self.font_small.render(info2, True, (220, 220, 220))
         self.screen.blit(text_surface2, (10, 32))
-
-        # inside your draw loop, after screen fill and before display.flip()
-        if humlet is self.selected_humlet:
-            pygame.draw.circle(self.screen, (255, 255, 255), pos, int(humlet.sense_range), 1)
-            pygame.draw.circle(self.screen, (255, 255, 255), pos, radius + 2, 1)
-
-            # Debug: draw vision rays for the selected humlet
-            if self.selected_humlet is not None:
-                v = getattr(self.selected_humlet, "vision", None)
-                if v is not None:
-                    v.draw(self.screen)
-
-
 
 
         # ----------------- INSPECTOR PANEL (right side) ----------------- #
