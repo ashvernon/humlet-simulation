@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass
-from typing import List
+from typing import Iterable, List, Sequence, Type
 
+from .spatial_hash import SpatialHash
 from .village import Village
 
 
@@ -115,6 +116,7 @@ class Environment:
 
         # Objects in world
         self.objects: List[WorldObject] = []
+        self.object_index = SpatialHash(self.width, self.height, cell_size=64.0)
 
         # Food dynamics (biomass-conserving)
         self.food_respawn_interval = 40
@@ -460,6 +462,38 @@ class Environment:
     # ------------------------------------------------------------------ #
     def add_object(self, obj: WorldObject) -> None:
         self.objects.append(obj)
+        self.object_index.insert(obj, obj.x, obj.y)
+
+    def remove_object(self, obj: WorldObject) -> None:
+        """Remove an object from the world and spatial index if present."""
+        try:
+            self.objects.remove(obj)
+        except ValueError:
+            return
+
+        self.object_index.remove(obj, obj.x, obj.y)
+
+    def query_objects_near(
+        self,
+        x: float,
+        y: float,
+        radius: float,
+        classes: Sequence[Type[WorldObject]] | None = None,
+    ) -> Iterable[WorldObject]:
+        """Return objects within ``radius`` using the spatial index."""
+
+        candidates = self.object_index.query_radius_wrapped(
+            x,
+            y,
+            radius,
+            self.width,
+            self.height,
+        )
+
+        if not classes:
+            return candidates
+
+        return (obj for obj in candidates if isinstance(obj, tuple(classes)))
 
     def _spawn_random_food(self, count: int = 8) -> float:
         """Spawn food in clustered, biome-aware patches.

@@ -796,15 +796,14 @@ class Humlet:
         # Vision component: nearest food by distance within sense range
         vision_dx, vision_dy = 0.0, 0.0
         min_food_d2 = float("inf")
-        for obj in env.objects:
-            if isinstance(obj, Food):
-                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
-                d2 = dx * dx + dy * dy
-                if d2 < min_food_d2 and d2 <= (self.effective_sense_range ** 2):
-                    if not self._has_line_of_sight(env, obj.x, obj.y, target=obj, target_radius=getattr(obj, "radius", 0.0)):
-                        continue
-                    min_food_d2 = d2
-                    vision_dx, vision_dy = _dir_to(obj.x, obj.y)
+        for obj in env.query_objects_near(self.x, self.y, self.effective_sense_range, classes=(Food,)):
+            dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+            d2 = dx * dx + dy * dy
+            if d2 < min_food_d2 and d2 <= (self.effective_sense_range ** 2):
+                if not self._has_line_of_sight(env, obj.x, obj.y, target=obj, target_radius=getattr(obj, "radius", 0.0)):
+                    continue
+                min_food_d2 = d2
+                vision_dx, vision_dy = _dir_to(obj.x, obj.y)
 
         # Blend smell + vision
         w_smell = 0.7
@@ -827,13 +826,12 @@ class Humlet:
         nearest_shelter_dx, nearest_shelter_dy = 0.0, 0.0
         min_shelter_d2 = float("inf")
 
-        for obj in env.objects:
-            if isinstance(obj, Shelter):
-                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
-                d2 = dx * dx + dy * dy
-                if d2 < min_shelter_d2:
-                    min_shelter_d2 = d2
-                    nearest_shelter_dx, nearest_shelter_dy = _dir_to(obj.x, obj.y)
+        for obj in env.query_objects_near(self.x, self.y, self.effective_sense_range, classes=(Shelter,)):
+            dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+            d2 = dx * dx + dy * dy
+            if d2 < min_shelter_d2:
+                min_shelter_d2 = d2
+                nearest_shelter_dx, nearest_shelter_dy = _dir_to(obj.x, obj.y)
 
         # ------------------------
         # Nearest same-group humlet
@@ -861,11 +859,10 @@ class Humlet:
         """Check if the Humlet is within `radius` of a shelter."""
 
         radius2 = radius * radius
-        for obj in env.objects:
-            if isinstance(obj, Shelter):
-                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
-                if dx * dx + dy * dy <= radius2:
-                    return True
+        for obj in env.query_objects_near(self.x, self.y, radius, classes=(Shelter,)):
+            dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+            if dx * dx + dy * dy <= radius2:
+                return True
         return False
 
     # ------------------------------------------------------------------ #
@@ -1374,7 +1371,7 @@ class Humlet:
         gather_radius2 = 8.0 ** 2
         gather_rate = 0.5  # units per tick
 
-        for obj in list(env.objects):
+        for obj in list(env.query_objects_near(self.x, self.y, gather_radius2 ** 0.5, classes=(Tree, StoneDeposit))):
             dx, dy = self._wrapped_delta(env, obj.x, obj.y)
             if dx * dx + dy * dy > gather_radius2:
                 continue
@@ -1385,7 +1382,7 @@ class Humlet:
                 self.carry_wood += amount
                 remaining_capacity -= amount
                 if obj.wood_amount <= 0:
-                    env.objects.remove(obj)
+                    env.remove_object(obj)
                 if remaining_capacity <= 0:
                     break
 
@@ -1395,7 +1392,7 @@ class Humlet:
                 self.carry_stone += amount
                 remaining_capacity -= amount
                 if obj.stone_amount <= 0:
-                    env.objects.remove(obj)
+                    env.remove_object(obj)
                 if remaining_capacity <= 0:
                     break
 
@@ -1432,13 +1429,12 @@ class Humlet:
     def _try_eat(self, env: Environment):
         """Consume food if within small radius (with wrap-around)."""
         eat_radius2 = 5.0 ** 2
-        for obj in list(env.objects):  # copy to allow removal
-            if isinstance(obj, Food):
-                dx, dy = self._wrapped_delta(env, obj.x, obj.y)
-                if dx * dx + dy * dy <= eat_radius2:
-                    self.energy = min(self.max_energy, self.energy + obj.nutrition)
-                    env.objects.remove(obj)
-                    break
+        for obj in list(env.query_objects_near(self.x, self.y, eat_radius2 ** 0.5, classes=(Food,))):
+            dx, dy = self._wrapped_delta(env, obj.x, obj.y)
+            if dx * dx + dy * dy <= eat_radius2:
+                self.energy = min(self.max_energy, self.energy + obj.nutrition)
+                env.remove_object(obj)
+                break
 
     def _apply_metabolism_and_damage(self, env: Environment):
         """Apply energy drain, social energy adjust, esteem tweak, and environmental health impacts."""

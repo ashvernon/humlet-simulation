@@ -52,6 +52,8 @@ class Simulation:
         # Per-region trait stats for heatmaps
         self.region_stats = RegionTraitStats(self.env)
         self.heatmap_mode = None  # or "met", "spd", "sns", "soc", "agg"
+        self.region_stats_update_interval = 5
+        self._last_region_stats_tick = -1
 
         # Spatial index for fast neighbour lookups (rebuilt each tick)
         self.humlet_index = SpatialHash(self.world_width, self.world_height, cell_size=80.0)
@@ -81,6 +83,9 @@ class Simulation:
             x = self.seed_rng.uniform(0, self.world_width)
             y = self.seed_rng.uniform(0, self.world_height)
             self.env.add_object(Shelter(x, y))
+
+        # Build initial spatial index for humlets
+        self._rebuild_humlet_index()
 
         # Derive carrying capacity from the actual environment and agents
         self._update_population_capacity()
@@ -399,7 +404,7 @@ class Simulation:
             # Update only if not paused
             # ------------------------
             if not self.paused:
-                updates_per_frame = 1 if not self.fast_mode else 5
+                updates_per_frame = 1 if not self.fast_mode else 2
                 for _ in range(updates_per_frame):
                     self._update_simulation_step()
 
@@ -450,12 +455,6 @@ class Simulation:
 
         newborns: list[Humlet] = []
 
-        # Prepare spatial index for neighbour-aware behaviours
-        self.humlet_index.clear()
-        for h in self.humlets:
-            if h.alive:
-                self.humlet_index.insert(h, h.x, h.y)
-
         # Update all humlets
         for h in self.humlets:
             h.update(
@@ -482,12 +481,25 @@ class Simulation:
             self._append_trajectory_log()
 
         # Update per-region trait stats for heatmaps
+        self._maybe_update_region_stats()
+
+        # Rebuild the spatial index for the next frame
+        self._rebuild_humlet_index()
+
+    def _maybe_update_region_stats(self) -> None:
+        if self.tick == self._last_region_stats_tick:
+            return
+
+        if self.heatmap_mode is None and self.tick % self.region_stats_update_interval != 0:
+            return
+
         self.region_stats.reset()
         for h in self.humlets:
             self.region_stats.accumulate(h)
         self.region_stats.compute_means()
+        self._last_region_stats_tick = self.tick
 
-        # Rebuild the spatial index for the next frame
+    def _rebuild_humlet_index(self) -> None:
         self.humlet_index.clear()
         for h in self.humlets:
             if h.alive:
