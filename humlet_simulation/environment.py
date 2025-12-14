@@ -27,7 +27,7 @@ class WorldObject:
 class Food(WorldObject):
     """Food resource that humlets can consume to gain energy."""
 
-    def __init__(self, x: float, y: float, nutrition: float = 40.0):
+    def __init__(self, x: float, y: float, nutrition: float = 200.0):
         super().__init__(x, y, radius=4.0, solid=False)
         self.type = "food"
         self.nutrition = nutrition
@@ -119,9 +119,9 @@ class Environment:
         self.object_index = SpatialHash(self.width, self.height, cell_size=64.0)
 
         # Food dynamics (biomass-conserving)
-        self.food_respawn_interval = 40
+        self.food_respawn_interval = 20
         self._last_food_spawn = 0
-        self.base_food_nutrition = 40.0
+        self.base_food_nutrition = 80.0
         self.food_energy_pool = 0.0
         self.food_capacity = 0
         self._productivity_per_tick = 0.0
@@ -134,8 +134,8 @@ class Environment:
         # Biome grid setup (Earth-like latitude + noise)
         # ---------------------------------------------------------- #
         # Initial desired grid size; _generate_regions will normalise
-        self.cols = 22
-        self.rows = 20
+        self.cols = 32
+        self.rows = 32
         self.tile_w = self.width / self.cols
         self.tile_h = self.height / self.rows
 
