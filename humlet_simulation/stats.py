@@ -4,9 +4,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import List
 
+import math
+
 from .humlet import Humlet
 from .environment import Environment, Food
-import math
 
 
 # ----------------------------------------------------------------------
