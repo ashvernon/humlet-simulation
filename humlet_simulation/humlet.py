@@ -572,6 +572,43 @@ class Humlet:
 
         return out
 
+    def _brain_learn(self, reward: float) -> None:
+        """Lightweight reinforcement step to nudge weights using the last pass.
+
+        The update is deliberately tiny so the simulation remains stable while
+        still letting brains adapt in-run instead of relying solely on genetic
+        mutation. The reward is squashed to [-1, 1] so outliers do not explode
+        the gradients.
+        """
+
+        if (
+            getattr(self, "last_inputs", None) is None
+            or getattr(self, "last_hidden", None) is None
+            or getattr(self, "last_outputs", None) is None
+        ):
+            return
+
+        reward_scale = math.tanh(float(reward))
+        if abs(reward_scale) < 1e-6:
+            return
+
+        lr = 0.0025
+        inputs = self.last_inputs
+        hidden = self.last_hidden
+        outputs = self.last_outputs
+
+        W1 = self.brain["W1"]
+        W2 = self.brain["W2"]
+
+        # Encourage outputs that matched the reward signal
+        grad_out = reward_scale * outputs
+        grad_hidden = (1.0 - hidden**2) * (W2.T @ grad_out)
+
+        self.brain["W2"] = W2 + lr * np.outer(grad_out, hidden)
+        self.brain["b2"] = self.brain["b2"] + lr * grad_out
+        self.brain["W1"] = W1 + lr * np.outer(grad_hidden, inputs)
+        self.brain["b1"] = self.brain["b1"] + lr * grad_hidden
+
     # ------------------------------------------------------------------ #
     # Brain evaluation helpers (simple reinforcement signal)
     # ------------------------------------------------------------------ #
@@ -638,6 +675,9 @@ class Humlet:
         # Exponential moving average to smooth noisy rewards
         self.brain_fitness = 0.98 * self.brain_fitness + 0.02 * reward
         self.last_brain_reward = reward
+
+        # Online learning step so the brain can adapt within a lifetime
+        self._brain_learn(reward)
 
     def _should_eat(self, eat_signal: float, hunger_level: float) -> bool:
         """
