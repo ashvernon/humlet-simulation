@@ -35,6 +35,9 @@ class StatsSnapshot:
     avg_digestion_flow: float
     avg_absorption_efficiency: float
 
+    # Neural rest behaviour
+    avg_rest_intensity: float
+
     # New: physical body traits / growth
     avg_mass: float
     avg_height: float
@@ -151,6 +154,7 @@ class EvolutionStats:
                 avg_stomach_fill=0.0,
                 avg_digestion_flow=0.0,
                 avg_absorption_efficiency=0.0,
+                avg_rest_intensity=0.0,
                 # physical
                 avg_mass=0.0,
                 avg_height=0.0,
@@ -227,6 +231,7 @@ class EvolutionStats:
             )
             avg_digestion_flow = avg(lambda h: getattr(h, "digestion_flow", 0.0))
             avg_absorption_efficiency = avg(lambda h: getattr(h, "absorption_efficiency", 0.0))
+            avg_rest_intensity = avg(lambda h: getattr(h, "rest_intensity", 0.0))
 
             # Physical body
             avg_mass = avg(lambda h: getattr(h, "mass", 0.0))
@@ -279,6 +284,7 @@ class EvolutionStats:
                 avg_stomach_fill=avg_stomach_fill,
                 avg_digestion_flow=avg_digestion_flow,
                 avg_absorption_efficiency=avg_absorption_efficiency,
+                avg_rest_intensity=avg_rest_intensity,
                 # physical
                 avg_mass=avg_mass,
                 avg_height=avg_height,
