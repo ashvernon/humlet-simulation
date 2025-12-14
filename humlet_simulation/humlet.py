@@ -232,7 +232,7 @@ class Humlet:
         # Reproduction control
         # ---------------------------
         self.repro_cooldown = 0
-        self.repro_min_energy = 55.0
+        self.repro_min_energy = 40.0
         self.pregnant: bool = False
         self.gestation_timer: int = 0
         self.gestation_period: int = 0
@@ -351,7 +351,7 @@ class Humlet:
 
         # Larger bodies need more reserves before reproducing
         size_factor = (self.mass / self.base_mass) ** 0.1
-        self.repro_min_energy = 55.0 * size_factor
+        self.repro_min_energy = 40.0 * size_factor
 
     def set_to_reproductive_age(self) -> None:
         """Start the humlet as an adult capable of reproducing."""
