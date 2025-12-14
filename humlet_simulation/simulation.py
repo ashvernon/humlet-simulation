@@ -883,16 +883,6 @@ class Simulation:
             y = draw_line(f"W2 shape: {h.brain['W2'].shape}", x, y)
             y = draw_line(f"Params : {h.brain_param_count()}", x, y)
 
-        # Trait history at bottom of LEFT panel
-        history_height = 80
-        history_rect = pygame.Rect(
-            humlet_rect.x + 6,
-            humlet_rect.bottom - history_height - 6,
-            humlet_rect.width - 12,
-            history_height,
-        )
-        self._draw_trait_history(history_rect)
-
         # ==============================================================
         # RIGHT PANEL: Population / evolution / village stats
         # ==============================================================
@@ -967,97 +957,6 @@ class Simulation:
 
 
  
-    # ------------------------------------------------------------------ #
-    # Trait history strip (sparklines)
-    # ------------------------------------------------------------------ #
-    def _draw_trait_history(self, rect: pygame.Rect) -> None:
-        """
-        Draw small 'sparklines' for mean traits over recent ticks.
-
-        Uses EvolutionStats.history and plots:
-        - avg_speed       (yellow)
-        - avg_sense_range (cyan)
-        - avg_aggression  (red)
-        - avg_sociability (green)
-        """
-        history = self.stats.history
-        if len(history) < 2:
-            return
-
-        # Take the most recent N points so it fits nicely
-        max_points = rect.width  # ~1 px per step
-        if len(history) > max_points:
-            data = history[-max_points:]
-        else:
-            data = history
-
-        # Background
-        pygame.draw.rect(self.screen, (18, 18, 28), rect)
-        pygame.draw.rect(self.screen, (80, 80, 120), rect, 1)
-
-        # Traits to plot: (label, color, accessor)
-        traits = [
-            ("Speed",       (255, 240,   0), lambda s: s.avg_speed),
-            ("Sense",       (  0, 220, 220), lambda s: s.avg_sense_range),
-            ("Aggression",  (255,  80,  80), lambda s: s.avg_aggression),
-            ("Sociability", ( 80, 255,  80), lambda s: s.avg_sociability),
-        ]
-
-        n = len(data)
-        if n < 2:
-            return
-
-        x0 = rect.x + 4
-        x1 = rect.right - 4
-        y0 = rect.y + 4
-        y1 = rect.bottom - 4
-        width = x1 - x0
-        height = y1 - y0
-        if width <= 0 or height <= 0:
-            return
-
-        xs = [
-            int(x0 + i * (width / (n - 1)))
-            for i in range(n)
-        ]
-
-        # Light horizontal midline for reference
-        mid_y = (y0 + y1) // 2
-        pygame.draw.line(self.screen, (50, 50, 70), (x0, mid_y), (x1, mid_y), 1)
-
-        eps = 1e-6
-        for _, color, fn in traits:
-            vals = [fn(s) for s in data]
-            vmin = min(vals)
-            vmax = max(vals)
-            if vmax - vmin < eps:
-                continue  # flat line
-
-            points = []
-            for i, v in enumerate(vals):
-                t = (v - vmin) / (vmax - vmin + eps)  # 0..1
-                y = int(y1 - t * height)
-                points.append((xs[i], y))
-
-            if len(points) >= 2:
-                pygame.draw.lines(self.screen, color, False, points, 1)
-
-        # Tiny legend in the bottom-left corner
-        legend_y = y1 - 12
-        legend_x = x0 + 2
-        legend_items = [
-            ("Spd", traits[0][1]),
-            ("Sn",  traits[1][1]),
-            ("Agg", traits[2][1]),
-            ("Soc", traits[3][1]),
-        ]
-        for label, col in legend_items:
-            pygame.draw.rect(self.screen, col, (legend_x, legend_y + 4, 6, 6))
-            text = self.font_small.render(label, True, (210, 210, 230))
-            self.screen.blit(text, (legend_x + 9, legend_y))
-            legend_x += 40
-
-
     def _draw_brain_overlay(self, h: Humlet) -> None:
         """
         Full-screen brain inspector:
